@@ -1,0 +1,13 @@
+# Platform Configuration
+
+database:
+  path: "sqlite:///data/market_data.db"
+
+trading:
+  initial_capital: 10000.0
+  commission: 0.001   # 0.1% per trade
+  slippage: 0.0005    # 0.05% slippage
+
+data:
+  benchmark_ticker: "SPY"
+  default_start_date: "2020-01-01"

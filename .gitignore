@@ -1,0 +1,12 @@
+venv/
+data/*.db
+logs/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+reports/
+tearsheets/
+.vscode/
+.idea/
+*.log
