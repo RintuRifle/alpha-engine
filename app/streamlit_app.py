@@ -64,7 +64,7 @@ def main():
     inputs = sidebar.render_sidebar()
 
     # ── Run Button ──
-    if st.sidebar.button("🚀 Run Backtest", type="primary", use_container_width=True):
+    if st.sidebar.button("🚀 Run Backtest", type="primary", width="stretch"):
         _run_backtest(inputs)
 
     # ── Show cached results if available ──
@@ -98,6 +98,18 @@ def _run_backtest(inputs: dict) -> None:
         )
         portfolio = engine.run()
         equity_df = portfolio.get_equity_df()
+
+        # ── Post-run sanity check ──
+        num_trades = len(portfolio.trade_history)
+        if num_trades == 0:
+            first_price = df["close"].iloc[0]
+            st.warning(
+                f"⚠️ **0 trades executed.** "
+                f"{inputs['ticker']} opened at **${first_price:.2f}** on the first day. "
+                f"Your capital is **${inputs['capital']:,}**. "
+                f"Even the 1-share fallback couldn't execute — this usually means the stock "
+                f"price exceeds your available capital. Try increasing your initial capital."
+            )
 
         # ── Step 4: Fetch Benchmark ──
         progress.progress(70, text=f"Fetching benchmark ({inputs['benchmark']})...")
@@ -204,7 +216,7 @@ def _display_results(state: dict) -> None:
                     "commission": "${:.2f}",
                     "slippage": "${:.2f}",
                 }),
-                use_container_width=True,
+                width='stretch',
             )
         else:
             st.info("No trades were executed during this backtest.")

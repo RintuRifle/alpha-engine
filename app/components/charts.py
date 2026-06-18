@@ -67,7 +67,7 @@ def render_equity_curve(
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
         hovermode="x unified",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def render_drawdown_chart(equity_df: pd.DataFrame) -> None:
@@ -101,7 +101,7 @@ def render_drawdown_chart(equity_df: pd.DataFrame) -> None:
         margin=dict(l=20, r=20, t=10, b=20),
         hovermode="x unified",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def render_returns_histogram(equity_df: pd.DataFrame) -> None:
@@ -140,7 +140,7 @@ def render_returns_histogram(equity_df: pd.DataFrame) -> None:
         height=350,
         margin=dict(l=20, r=20, t=10, b=20),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def render_monte_carlo(sim_df: pd.DataFrame, percentiles: dict) -> None:
@@ -195,4 +195,4 @@ def render_monte_carlo(sim_df: pd.DataFrame, percentiles: dict) -> None:
         margin=dict(l=20, r=20, t=10, b=20),
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')

@@ -50,7 +50,15 @@ class Metrics:
         end_val = equity_df["total_equity"].iloc[-1]
         if start_val <= 0:
             return 0.0
-        days = (equity_df.index[-1] - equity_df.index[0]).days
+
+        # Ensure the index is DatetimeIndex before doing date arithmetic
+        try:
+            idx = pd.to_datetime(equity_df.index)
+            days = (idx[-1] - idx[0]).days
+        except Exception:
+            # Fall back to counting rows (approx: 252 trading days/year)
+            days = int(len(equity_df) * (365 / 252))
+
         if days <= 0:
             return 0.0
         return (end_val / start_val) ** (365.0 / days) - 1
@@ -139,7 +147,7 @@ class Metrics:
     @staticmethod
     def max_drawdown_duration(equity_df: pd.DataFrame) -> int:
         """
-        Maximum Drawdown Duration — longest time (in trading days)
+        Maximum Drawdown Duration — longest consecutive run of trading days
         the portfolio stayed below its previous peak.
 
         Returns:
@@ -149,6 +157,7 @@ class Metrics:
             return 0
         equity = equity_df["total_equity"]
         cummax = equity.cummax()
+        # Consider flat (equity == cummax) as NOT underwater
         is_underwater = equity < cummax
 
         max_duration = 0

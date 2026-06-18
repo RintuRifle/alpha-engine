@@ -5,6 +5,10 @@ Determines HOW MUCH capital to allocate per trade. Supports multiple methods:
 - fixed_capital: Allocate a fixed percentage of available capital per trade.
 - fixed_shares: Buy a fixed number of shares per trade.
 - kelly: Kelly Criterion — mathematically optimal sizing based on win rate and payoff.
+
+IMPORTANT: If the computed quantity is 0 (e.g., stock price > allocation budget),
+the sizer falls back to buying 1 share — as long as the full share price is
+affordable. This prevents the silent "0 trades forever" bug when capital is small.
 """
 
 from typing import Optional
@@ -44,19 +48,34 @@ class PositionSizer:
 
         Returns:
             Integer number of shares (always whole shares, rounded down).
+            Returns 0 if the stock is completely unaffordable.
         """
         if price <= 0 or available_capital <= 0:
             return 0
 
         if self.method == "fixed_capital":
-            return self._fixed_capital_pct(price, available_capital)
+            qty = self._fixed_capital_pct(price, available_capital)
         elif self.method == "fixed_shares":
-            return self._fixed_shares(price, available_capital)
+            qty = self._fixed_shares(price, available_capital)
         elif self.method == "kelly":
-            return self._kelly_criterion(price, available_capital)
+            qty = self._kelly_criterion(price, available_capital)
         else:
             logger.warning(f"Unknown sizing method '{self.method}', falling back to fixed_capital")
-            return self._fixed_capital_pct(price, available_capital)
+            qty = self._fixed_capital_pct(price, available_capital)
+
+        # ── Minimum 1-share fallback ──────────────────────────────────────
+        # If the allocation budget can't afford even 1 share, but the full
+        # capital CAN afford it, buy exactly 1 share. This prevents the
+        # silent "0 trades forever" bug when capital < 10x stock price.
+        if qty == 0 and price <= available_capital:
+            logger.debug(
+                f"Allocation gave 0 shares @ ${price:.2f} "
+                f"(budget=${available_capital * self.params.get('allocation', 0.1):.2f}). "
+                f"Falling back to 1 share."
+            )
+            return 1
+
+        return qty
 
     def _fixed_capital_pct(self, price: float, available_capital: float) -> int:
         """
@@ -67,7 +86,10 @@ class PositionSizer:
         allocation = self.params.get("allocation", 0.10)
         target_capital = available_capital * allocation
         qty = int(target_capital // price)
-        logger.debug(f"FixedCapital: {allocation*100:.0f}% of ${available_capital:.0f} = {qty} shares @ ${price:.2f}")
+        logger.debug(
+            f"FixedCapital: {allocation*100:.0f}% of ${available_capital:.0f}"
+            f" = {qty} shares @ ${price:.2f}"
+        )
         return qty
 
     def _fixed_shares(self, price: float, available_capital: float) -> int:
@@ -94,17 +116,16 @@ class PositionSizer:
         """
         win_rate = self.params.get("win_rate", 0.5)
         avg_win = self.params.get("avg_win", 0.02)    # 2% average win
-        avg_loss = self.params.get("avg_loss", 0.02)   # 2% average loss
+        avg_loss = self.params.get("avg_loss", 0.02)  # 2% average loss
 
         if avg_loss == 0 or avg_win == 0:
             logger.warning("Kelly: avg_win or avg_loss is 0, falling back to 5%")
             kelly_fraction = 0.05
         else:
-            # Kelly formula
             kelly_fraction = (win_rate / avg_loss) - ((1 - win_rate) / avg_win)
 
         # Clamp to prevent over-betting (half-Kelly is safer in practice)
-        kelly_fraction = max(0.0, min(kelly_fraction * 0.5, 0.25))  # Half-Kelly, max 25%
+        kelly_fraction = max(0.0, min(kelly_fraction * 0.5, 0.25))
 
         target_capital = available_capital * kelly_fraction
         qty = int(target_capital // price)
