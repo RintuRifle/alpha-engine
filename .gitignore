@@ -10,3 +10,20 @@ tearsheets/
 .vscode/
 .idea/
 *.log
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Coverage
+htmlcov/
+coverage.xml
+.coverage
+
+# Type checking
+.mypy_cache/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,13 +1,51 @@
-# Platform Configuration
+# ============================================================
+# Quant Research Platform — Master Configuration
+# ============================================================
 
 database:
   path: "sqlite:///data/market_data.db"
 
 trading:
   initial_capital: 10000.0
-  commission: 0.001   # 0.1% per trade
-  slippage: 0.0005    # 0.05% slippage
+  commission: 0.001       # 0.1% per trade
+  slippage: 0.0005        # 0.05% slippage
+
+position_sizing:
+  method: "fixed_capital"  # Options: fixed_capital, fixed_shares, kelly
+  allocation: 0.10         # 10% of portfolio per trade
 
 data:
+  default_tickers:
+    - "AAPL"
+    - "MSFT"
+    - "RELIANCE.NS"
+    - "INFY.NS"
+    - "TCS.NS"
   benchmark_ticker: "SPY"
-  default_start_date: "2020-01-01"
+  default_start_date: "2018-01-01"
+  default_end_date: "2023-12-31"
+
+walk_forward:
+  train_ratio: 0.70
+  n_splits: 5             # Number of sliding windows
+
+logging:
+  level: "INFO"            # DEBUG, INFO, WARNING, ERROR
+  max_bytes: 10485760      # 10 MB per log file
+  backup_count: 5
+
+strategies:
+  ma_crossover:
+    short_window: 50
+    long_window: 200
+  rsi_reversion:
+    window: 14
+    overbought: 70
+    oversold: 30
+  bollinger_bands:
+    window: 20
+    num_std: 2.0
+  macd:
+    fast_period: 12
+    slow_period: 26
+    signal_period: 9
