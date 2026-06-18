@@ -29,38 +29,37 @@ Retail traders and quant enthusiasts need a way to **backtest trading strategies
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Streamlit Dashboard (app/)                    │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │ Sidebar  │  │  Charts  │  │ Metrics  │  │  Trade Log    │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───────┬───────┘  │
-│       └──────────────┴─────────────┴────────────────┘          │
-├─────────────────────────────────────────────────────────────────┤
-│                    Analytics Engine (analytics/)                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │ Metrics  │  │   Risk   │  │  Monte   │  │  Optimizer    │  │
-│  │ Module   │  │ Manager  │  │  Carlo   │  │ (Grid Search) │  │
-│  └──────────┘  └──────────┘  └──────────┘  └───────────────┘  │
-├─────────────────────────────────────────────────────────────────┤
-│                    Backtester Engine (backtester/)               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │ Engine   │  │ Portfolio│  │  Order   │  │  Position     │  │
-│  │ (Loop)   │  │ Tracker  │  │ Manager  │  │  Sizing       │  │
-│  └──────────┘  └──────────┘  └──────────┘  └───────────────┘  │
-├─────────────────────────────────────────────────────────────────┤
-│                    Strategy Library (strategies/)                │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │   SMA    │  │   RSI    │  │Bollinger │  │    MACD       │  │
-│  │Crossover │  │Reversion │  │  Bands   │  │  Strategy     │  │
-│  └──────────┘  └──────────┘  └──────────┘  └───────────────┘  │
-├─────────────────────────────────────────────────────────────────┤
-│                    Data Layer (data/)                            │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │ yFinance │  │  SQLite  │  │ Cache    │  │  Validator    │  │
-│  │ Fetcher  │  │ Database │  │ Manager  │  │  (Cleaning)   │  │
-│  └──────────┘  └──────────┘  └──────────┘  └───────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph App ["🖥️ Streamlit Dashboard (app/)"]
+        direction LR
+        Sidebar ~~~ Charts ~~~ UI_Metrics["Metrics"] ~~~ TradeLog["Trade Log"]
+    end
+
+    subgraph Analytics ["📊 Analytics Engine (analytics/)"]
+        direction LR
+        MetricsMod["Metrics Module"] ~~~ RiskMgr["Risk Manager"] ~~~ MonteCarlo["Monte Carlo"] ~~~ Optimizer["Optimizer (Grid Search)"]
+    end
+
+    subgraph Backtest ["⚙️ Backtester Engine (backtester/)"]
+        direction LR
+        Engine["Engine (Loop)"] ~~~ Portfolio["Portfolio Tracker"] ~~~ Orders["Order Manager"] ~~~ Sizing["Position Sizing"]
+    end
+
+    subgraph Strategies ["🧠 Strategy Library (strategies/)"]
+        direction LR
+        SMA["SMA Crossover"] ~~~ RSI["RSI Reversion"] ~~~ BB["Bollinger Bands"] ~~~ MACD["MACD Strategy"]
+    end
+
+    subgraph Data ["💾 Data Layer (data/)"]
+        direction LR
+        YF["yFinance Fetcher"] ~~~ DB[("SQLite Database")] ~~~ Cache["Cache Manager"] ~~~ Validator["Validator (Cleaning)"]
+    end
+
+    App --> Analytics
+    Analytics --> Backtest
+    Backtest --> Strategies
+    Backtest --> Data
 ```
 
 ---
