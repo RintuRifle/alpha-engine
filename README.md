@@ -1,6 +1,7 @@
 <div align="center">
 
-# 📈 Quant Research Platform
+# 📈 Quant Research Platform 
+(Status: Developement Phase)
 
 **A production-ready quantitative research and backtesting platform built with Python.**
 
@@ -266,7 +267,7 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 <div align="center">
 
-**Built with ❤️ by [Akshit Kumar Tiwari](https://github.com/RintuRifle)**
+**Built by [Akshit Kumar Tiwari](https://github.com/RintuRifle)**
 
 *If you found this useful, give it a ⭐ on GitHub!*
 
