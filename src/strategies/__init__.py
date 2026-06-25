@@ -5,6 +5,8 @@ from .ma_crossover import MACrossover
 from .rsi_reversion import RSIReversion
 from .bollinger_bands import BollingerBands
 from .macd_strategy import MACDStrategy
+from .multi_factor import MultiFactorStrategy
+from .momentum_mr import MomentumMR
 
 __all__ = [
     "BaseStrategy",
@@ -13,4 +15,6 @@ __all__ = [
     "RSIReversion",
     "BollingerBands",
     "MACDStrategy",
+    "MultiFactorStrategy",
+    "MomentumMR",
 ]

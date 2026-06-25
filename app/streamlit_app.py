@@ -24,6 +24,8 @@ from src.strategies.rsi_reversion import RSIReversion
 from src.strategies.bollinger_bands import BollingerBands
 from src.strategies.macd_strategy import MACDStrategy
 from src.strategies.buy_and_hold import BuyAndHold
+from src.strategies.multi_factor import MultiFactorStrategy
+from src.strategies.momentum_mr import MomentumMR
 from src.backtester.engine import BacktestEngine
 from src.analytics.benchmark import Benchmark
 from src.analytics.monte_carlo import MonteCarlo
@@ -43,6 +45,8 @@ STRATEGY_MAP = {
     "RSI Reversion": RSIReversion,
     "Bollinger Bands": BollingerBands,
     "MACD": MACDStrategy,
+    "Multi-Factor": MultiFactorStrategy,
+    "Momentum + MR": MomentumMR,
     "Buy & Hold": BuyAndHold,
 }
 
@@ -95,6 +99,8 @@ def _run_backtest(inputs: dict) -> None:
             data=df_with_signals,
             ticker=inputs["ticker"],
             initial_capital=inputs["capital"],
+            allocation=inputs.get("allocation", 0.95),
+            allow_short=inputs.get("allow_short", False),
         )
         portfolio = engine.run()
         equity_df = portfolio.get_equity_df()

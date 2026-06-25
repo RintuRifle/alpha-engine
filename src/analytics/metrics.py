@@ -2,7 +2,7 @@
 Performance metrics for backtesting results.
 
 Implements: CAGR, Sharpe, Sortino, Calmar, Max Drawdown, Win Rate,
-Profit Factor, Total Return, and Volatility.
+Profit Factor, Total Return, Volatility, Ulcer Index, Omega Ratio, Tail Ratio.
 
 All formulas follow standard quantitative finance conventions with
 252 trading days per year for annualization.
@@ -172,6 +172,66 @@ class Metrics:
         return max_duration
 
     # ──────────────────────────────────────────────
+    # Institutional Metrics (NEW)
+    # ──────────────────────────────────────────────
+
+    @staticmethod
+    def ulcer_index(equity_df: pd.DataFrame, window: int = 14) -> float:
+        """
+        Ulcer Index — measures depth AND duration of drawdowns.
+
+        Better than Max Drawdown because it penalizes prolonged underwater periods.
+        Lower is better. Professional threshold: < 5 is excellent, > 15 is painful.
+
+        UI = sqrt(mean(drawdown_pct²))
+        """
+        if equity_df.empty or len(equity_df) < 2:
+            return 0.0
+        close = equity_df["total_equity"]
+        rolling_max = close.rolling(window=window, min_periods=1).max()
+        drawdown_pct = ((close - rolling_max) / rolling_max) * 100
+        return float(np.sqrt((drawdown_pct ** 2).mean()))
+
+    @staticmethod
+    def omega_ratio(equity_df: pd.DataFrame, threshold: float = 0.0) -> float:
+        """
+        Omega Ratio — ratio of gains above threshold to losses below threshold.
+
+        More complete than Sharpe because it uses the full return distribution,
+        not just mean and variance. Captures skewness and kurtosis implicitly.
+
+        Omega > 1 is profitable; > 2 is good; > 3 is excellent.
+        """
+        if equity_df.empty or len(equity_df) < 2:
+            return 0.0
+        returns = equity_df["total_equity"].pct_change().dropna()
+        gains = returns[returns > threshold] - threshold
+        losses = threshold - returns[returns <= threshold]
+        if losses.sum() == 0:
+            return float("inf") if gains.sum() > 0 else 0.0
+        return float(gains.sum() / losses.sum())
+
+    @staticmethod
+    def tail_ratio(equity_df: pd.DataFrame) -> float:
+        """
+        Tail Ratio — compares right tail (best days) vs left tail (worst days).
+
+        Tail Ratio = 95th percentile return / abs(5th percentile return)
+        > 1.0 means you have better upside extremes than downside (good)
+        < 1.0 means your worst days are worse than your best days (bad)
+        """
+        if equity_df.empty or len(equity_df) < 2:
+            return 0.0
+        returns = equity_df["total_equity"].pct_change().dropna()
+        if len(returns) < 20:
+            return 0.0
+        top = float(np.percentile(returns, 95))
+        bottom = abs(float(np.percentile(returns, 5)))
+        if bottom == 0:
+            return float("inf") if top > 0 else 0.0
+        return top / bottom
+
+    # ──────────────────────────────────────────────
     # Trade-Level Metrics
     # ──────────────────────────────────────────────
 
@@ -226,15 +286,17 @@ class Metrics:
     @staticmethod
     def _calculate_round_trips(trade_history: List[dict]) -> List[float]:
         """
-        Match BUY and SELL trades into round trips and calculate P&L for each.
+        Match BUY/COVER and SELL/SHORT trades into round trips and calculate P&L.
 
         Uses FIFO (First In, First Out) matching.
+        Handles both long (BUY→SELL) and short (SHORT→COVER) round trips.
 
         Returns:
             List of P&L values for each completed round trip.
         """
         # Group by ticker
         buys: dict[str, list] = {}
+        shorts: dict[str, list] = {}
         round_trip_pnls: list[float] = []
 
         for trade in trade_history:
@@ -257,6 +319,21 @@ class Metrics:
                 buy_cost = matched_qty * buy["price"] + buy["commission"]
                 sell_revenue = matched_qty * price - commission
                 pnl = sell_revenue - buy_cost
+                round_trip_pnls.append(pnl)
+
+            elif action == "SHORT":
+                if ticker not in shorts:
+                    shorts[ticker] = []
+                shorts[ticker].append({"qty": qty, "price": price, "commission": commission})
+
+            elif action == "COVER" and ticker in shorts and shorts[ticker]:
+                # Match short → cover
+                short = shorts[ticker].pop(0)
+                matched_qty = min(short["qty"], qty)
+
+                short_proceeds = matched_qty * short["price"] - short["commission"]
+                cover_cost = matched_qty * price + commission
+                pnl = short_proceeds - cover_cost
                 round_trip_pnls.append(pnl)
 
         return round_trip_pnls
@@ -285,4 +362,8 @@ class Metrics:
             "win_rate": Metrics.win_rate(trade_history),
             "profit_factor": Metrics.profit_factor(trade_history),
             "total_trades": len(trade_history) // 2,
+            # ── Institutional Metrics ──
+            "ulcer_index": Metrics.ulcer_index(equity_df),
+            "omega_ratio": Metrics.omega_ratio(equity_df),
+            "tail_ratio": Metrics.tail_ratio(equity_df),
         }

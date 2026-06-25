@@ -2,7 +2,7 @@
 Metrics display component for the Streamlit dashboard.
 
 Renders KPI cards with color coding: green for positive metrics,
-red for negative. Shows 8 key performance indicators.
+red for negative. Shows 12 key performance indicators across 3 rows.
 """
 
 import streamlit as st
@@ -111,3 +111,25 @@ def render_metrics(
             pf = perf["profit_factor"]
             pf_str = f"{pf:.2f}" if pf != float("inf") else "∞"
             st.write(f"Profit Factor: {pf_str}")
+
+        # ── Institutional Metrics ──
+        st.markdown("---")
+        inst_col1, inst_col2, inst_col3 = st.columns(3)
+
+        with inst_col1:
+            st.markdown("**📊 Institutional**")
+            ui = perf.get("ulcer_index", 0)
+            ui_rating = "🟢 Excellent" if ui < 5 else ("🟡 Moderate" if ui < 15 else "🔴 High Stress")
+            st.write(f"Ulcer Index: {ui:.2f} ({ui_rating})")
+
+        with inst_col2:
+            omega = perf.get("omega_ratio", 0)
+            omega_str = f"{omega:.2f}" if omega != float("inf") else "∞"
+            omega_rating = "🟢 Excellent" if omega > 3 else ("🟡 Good" if omega > 1.5 else "🔴 Weak")
+            st.write(f"Omega Ratio: {omega_str} ({omega_rating})")
+
+        with inst_col3:
+            tail = perf.get("tail_ratio", 0)
+            tail_str = f"{tail:.2f}" if tail != float("inf") else "∞"
+            tail_rating = "🟢 Right-skewed" if tail > 1.0 else "🔴 Left-skewed"
+            st.write(f"Tail Ratio: {tail_str} ({tail_rating})")

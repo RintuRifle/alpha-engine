@@ -50,7 +50,15 @@ def render_sidebar() -> Dict[str, Any]:
     st.sidebar.markdown("### 🧠 Strategy")
     strategy = st.sidebar.selectbox(
         "Select Strategy",
-        ["SMA Crossover", "RSI Reversion", "Bollinger Bands", "MACD", "Buy & Hold"],
+        [
+            "SMA Crossover",
+            "RSI Reversion",
+            "Bollinger Bands",
+            "MACD",
+            "Multi-Factor",
+            "Momentum + MR",
+            "Buy & Hold",
+        ],
     )
 
     # ── Strategy-Specific Parameters ──
@@ -98,6 +106,53 @@ def render_sidebar() -> Dict[str, Any]:
             "Signal EMA", min_value=5, max_value=20, value=9
         )
 
+    elif strategy == "Multi-Factor":
+        st.sidebar.markdown("**Multi-Factor Parameters**")
+        strategy_params["min_score"] = st.sidebar.slider(
+            "Min Signal Score", min_value=2, max_value=6, value=4,
+            help="Higher = fewer but stronger signals. Max possible: 7"
+        )
+        strategy_params["rsi_window"] = st.sidebar.slider(
+            "RSI Period", min_value=5, max_value=30, value=14
+        )
+        strategy_params["bb_window"] = st.sidebar.slider(
+            "BB Window", min_value=10, max_value=50, value=20
+        )
+        strategy_params["bb_std"] = st.sidebar.slider(
+            "BB Std Dev", min_value=1.0, max_value=3.5, value=2.0, step=0.25
+        )
+
+    elif strategy == "Momentum + MR":
+        st.sidebar.markdown("**Momentum + MR Parameters**")
+        strategy_params["rsi_window"] = st.sidebar.slider(
+            "RSI Period", min_value=5, max_value=30, value=14
+        )
+        strategy_params["entry_rsi"] = st.sidebar.slider(
+            "Entry RSI (buy dip below)", min_value=20, max_value=50, value=40
+        )
+        strategy_params["exit_rsi"] = st.sidebar.slider(
+            "Exit RSI (sell above)", min_value=40, max_value=80, value=55
+        )
+        strategy_params["trend_ma"] = st.sidebar.slider(
+            "Trend MA Period", min_value=50, max_value=300, value=200, step=10
+        )
+
+    # ── Engine Settings ──
+    st.sidebar.markdown("### ⚡ Engine Settings")
+    allocation = st.sidebar.slider(
+        "Capital Allocation %",
+        min_value=10,
+        max_value=100,
+        value=95,
+        step=5,
+        help="Percentage of capital to deploy per trade. 95% recommended (5% reserved for costs).",
+    )
+    allow_short = st.sidebar.checkbox(
+        "Allow Short Selling",
+        value=False,
+        help="Enable short selling on sell signals when no position is held.",
+    )
+
     # ── Benchmark ──
     st.sidebar.markdown("### 📈 Benchmark")
     benchmark = st.sidebar.selectbox(
@@ -117,4 +172,6 @@ def render_sidebar() -> Dict[str, Any]:
         "strategy": strategy,
         "strategy_params": strategy_params,
         "benchmark": benchmark,
+        "allocation": allocation / 100.0,
+        "allow_short": allow_short,
     }

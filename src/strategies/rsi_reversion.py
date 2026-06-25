@@ -52,9 +52,10 @@ class RSIReversion(BaseStrategy):
         gain = delta.where(delta > 0, 0.0)
         loss = (-delta).where(delta < 0, 0.0)
 
-        # Calculate average gain/loss using rolling mean (Wilder's method approximation)
-        avg_gain = gain.rolling(window=self.window, min_periods=self.window).mean()
-        avg_loss = loss.rolling(window=self.window, min_periods=self.window).mean()
+        # Calculate average gain/loss using Wilder's exponential smoothing (alpha=1/window)
+        # This matches TradingView/Bloomberg RSI exactly — NOT the simple rolling mean approximation
+        avg_gain = gain.ewm(alpha=1/self.window, min_periods=self.window, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1/self.window, min_periods=self.window, adjust=False).mean()
 
         # RSI calculation with edge case handling
         # When avg_loss == 0: RSI = 100 (all gains, no losses → extremely overbought)

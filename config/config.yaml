@@ -12,7 +12,7 @@ trading:
 
 position_sizing:
   method: "fixed_capital"  # Options: fixed_capital, fixed_shares, kelly
-  allocation: 0.10         # 10% of portfolio per trade
+  allocation: 0.95         # 95% of portfolio per trade (leaves room for slippage/commissions)
 
 data:
   default_tickers:
