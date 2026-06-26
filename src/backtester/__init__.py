@@ -5,6 +5,7 @@ from .portfolio import Portfolio
 from .order_manager import OrderManager
 from .transaction_costs import TransactionCosts
 from .position_sizing import PositionSizer
+from .risk_controls import RiskControls
 
 __all__ = [
     "BacktestEngine",
@@ -13,4 +14,5 @@ __all__ = [
     "OrderManager",
     "TransactionCosts",
     "PositionSizer",
+    "RiskControls",
 ]

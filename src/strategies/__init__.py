@@ -7,6 +7,7 @@ from .bollinger_bands import BollingerBands
 from .macd_strategy import MACDStrategy
 from .multi_factor import MultiFactorStrategy
 from .momentum_mr import MomentumMR
+from .regime_detector import RegimeDetector, Regime
 
 __all__ = [
     "BaseStrategy",
@@ -17,4 +18,6 @@ __all__ = [
     "MACDStrategy",
     "MultiFactorStrategy",
     "MomentumMR",
+    "RegimeDetector",
+    "Regime",
 ]

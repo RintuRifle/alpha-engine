@@ -5,6 +5,10 @@ Main entry point for the interactive web application.
 Wires together: data fetching, strategy execution, backtesting,
 analytics, benchmark comparison, and visualization.
 
+Modes:
+  Single Strategy: Run one strategy with detailed analysis
+  Compare All: Run all 7 strategies side-by-side with ranking
+
 Usage:
     streamlit run app/streamlit_app.py
 """
@@ -30,6 +34,7 @@ from src.backtester.engine import BacktestEngine
 from src.analytics.benchmark import Benchmark
 from src.analytics.monte_carlo import MonteCarlo
 from components import sidebar, charts, metrics_display
+from components.strategy_comparison import run_comparison, render_comparison
 
 # ── Page Config ──
 st.set_page_config(
@@ -67,13 +72,47 @@ def main():
     # ── Sidebar Inputs ──
     inputs = sidebar.render_sidebar()
 
-    # ── Run Button ──
-    if st.sidebar.button("🚀 Run Backtest", type="primary", width="stretch"):
-        _run_backtest(inputs)
+    # ── Action Buttons ──
+    btn_col1, btn_col2 = st.sidebar.columns(2)
+    run_single = btn_col1.button("🚀 Run Backtest", type="primary", use_container_width=True)
+    run_compare = btn_col2.button("🏆 Compare All", use_container_width=True)
 
-    # ── Show cached results if available ──
+    if run_single:
+        _run_backtest(inputs)
+    elif run_compare:
+        _run_comparison(inputs)
     elif "equity_df" in st.session_state:
         _display_results(st.session_state)
+    elif "comparison_data" in st.session_state:
+        render_comparison(st.session_state["comparison_data"], inputs["capital"])
+
+
+def _run_comparison(inputs: dict) -> None:
+    """Run all strategies and show comparison dashboard."""
+    try:
+        # Fetch data
+        cache = CacheManager()
+        df = cache.get_data(inputs["ticker"], inputs["start_date"], inputs["end_date"])
+
+        comparison_data = run_comparison(
+            df=df,
+            ticker=inputs["ticker"],
+            initial_capital=inputs["capital"],
+            allocation=inputs.get("allocation", 0.95),
+            allow_short=inputs.get("allow_short", False),
+            use_stops=inputs.get("use_stops", False),
+            atr_multiplier=inputs.get("atr_multiplier", 2.0),
+        )
+
+        st.session_state["comparison_data"] = comparison_data
+        # Clear single-strategy state
+        st.session_state.pop("equity_df", None)
+
+        render_comparison(comparison_data, inputs["capital"])
+
+    except Exception as e:
+        st.error(f"❌ Comparison Error: {e}")
+        st.exception(e)
 
 
 def _run_backtest(inputs: dict) -> None:
@@ -101,6 +140,11 @@ def _run_backtest(inputs: dict) -> None:
             initial_capital=inputs["capital"],
             allocation=inputs.get("allocation", 0.95),
             allow_short=inputs.get("allow_short", False),
+            use_stops=inputs.get("use_stops", False),
+            atr_multiplier=inputs.get("atr_multiplier", 2.0),
+            use_trailing_stop=inputs.get("use_trailing_stop", True),
+            use_circuit_breaker=inputs.get("use_circuit_breaker", False),
+            circuit_breaker_pct=inputs.get("circuit_breaker_pct", -0.03),
         )
         portfolio = engine.run()
         equity_df = portfolio.get_equity_df()
@@ -134,8 +178,16 @@ def _run_backtest(inputs: dict) -> None:
 
         # ── Step 5: Monte Carlo ──
         progress.progress(85, text="Running Monte Carlo simulation...")
-        sim_df = MonteCarlo.simulate_paths(portfolio_returns, num_sims=1000)
+        stress_prob = 0.10 if inputs.get("stress_test", False) else 0.0
+        sim_df = MonteCarlo.simulate_paths(
+            portfolio_returns, num_sims=1000, stress_probability=stress_prob
+        )
         percentiles = MonteCarlo.get_percentile_paths(sim_df)
+
+        # Stress test individual scenarios
+        stress_results = []
+        if inputs.get("stress_test", False):
+            stress_results = MonteCarlo.stress_test_summary(portfolio_returns)
 
         progress.progress(100, text="✅ Complete!")
 
@@ -149,6 +201,9 @@ def _run_backtest(inputs: dict) -> None:
         st.session_state["percentiles"] = percentiles
         st.session_state["inputs"] = inputs
         st.session_state["strategy_name"] = strategy.name
+        st.session_state["stress_results"] = stress_results
+        # Clear comparison state
+        st.session_state.pop("comparison_data", None)
 
         # Display results
         _display_results(st.session_state)
@@ -168,6 +223,14 @@ def _display_results(state: dict) -> None:
 
     st.subheader(f"Results: {inputs['ticker']} — {strategy_name}")
 
+    # Show risk controls status
+    if inputs.get("use_stops", False):
+        st.info(
+            f"🛡️ **Risk Controls Active** — ATR Stop ({inputs.get('atr_multiplier', 2.0)}x) "
+            f"| Trailing: {'✅' if inputs.get('use_trailing_stop', True) else '❌'} "
+            f"| Circuit Breaker: {'✅' if inputs.get('use_circuit_breaker', False) else '❌'}"
+        )
+
     # ── KPI Cards ──
     metrics_display.render_metrics(
         equity_df,
@@ -177,28 +240,33 @@ def _display_results(state: dict) -> None:
     )
 
     # ── Charts in Tabs ──
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab_names = [
         "📈 Equity Curve",
         "📉 Drawdown",
         "📊 Returns Distribution",
+        "📈 Rolling Metrics",
         "🎲 Monte Carlo",
         "📋 Trade Log",
-    ])
+    ]
+    tabs = st.tabs(tab_names)
 
-    with tab1:
+    with tabs[0]:
         charts.render_equity_curve(
             equity_df,
             state.get("benchmark_equity"),
             strategy_name,
         )
 
-    with tab2:
+    with tabs[1]:
         charts.render_drawdown_chart(equity_df)
 
-    with tab3:
+    with tabs[2]:
         charts.render_returns_histogram(equity_df)
 
-    with tab4:
+    with tabs[3]:
+        charts.render_rolling_metrics(equity_df)
+
+    with tabs[4]:
         sim_df = state.get("sim_df", pd.DataFrame())
         percentiles = state.get("percentiles", {})
         if not sim_df.empty:
@@ -208,12 +276,18 @@ def _display_results(state: dict) -> None:
             mc_stats = MonteCarlo.summary_stats(sim_df)
             if mc_stats:
                 st.markdown("**Monte Carlo Summary (1-year projection)**")
-                mc1, mc2, mc3 = st.columns(3)
+                mc1, mc2, mc3, mc4 = st.columns(4)
                 mc1.metric("Median Final", f"{mc_stats['median_final']:.2f}x")
                 mc2.metric("Prob. of Profit", f"{mc_stats['prob_profit']*100:.1f}%")
                 mc3.metric("Worst Case (5%)", f"{mc_stats['worst_case_5pct']:.2f}x")
+                mc4.metric("Prob. of 20%+ Loss", f"{mc_stats.get('prob_loss_20pct', 0)*100:.1f}%")
 
-    with tab5:
+            # Stress test results
+            stress_results = state.get("stress_results", [])
+            if stress_results:
+                charts.render_stress_test(stress_results)
+
+    with tabs[5]:
         if portfolio.trade_history:
             trade_df = pd.DataFrame(portfolio.trade_history)
             st.dataframe(

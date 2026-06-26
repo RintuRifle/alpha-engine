@@ -196,3 +196,99 @@ def render_monte_carlo(sim_df: pd.DataFrame, percentiles: dict) -> None:
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
     )
     st.plotly_chart(fig, width='stretch')
+
+
+def render_rolling_metrics(equity_df: pd.DataFrame, window: int = 60) -> None:
+    """
+    Render rolling Sharpe, volatility, and return over time.
+
+    Strategies that look great in aggregate may have terrible periods.
+    This chart exposes time-varying performance quality.
+    """
+    if equity_df.empty or len(equity_df) < window + 10:
+        st.info(f"Need at least {window + 10} data points for rolling metrics.")
+        return
+
+    st.markdown(f"### 📈 Rolling Metrics ({window}-day window)")
+
+    returns = equity_df["total_equity"].pct_change().dropna()
+
+    # Rolling Sharpe
+    rolling_mean = returns.rolling(window).mean()
+    rolling_std = returns.rolling(window).std()
+    rolling_sharpe = (rolling_mean / rolling_std) * np.sqrt(252)
+
+    # Rolling Volatility (annualized)
+    rolling_vol = rolling_std * np.sqrt(252) * 100  # as percentage
+
+    # Cumulative return
+    cum_return = ((1 + returns).cumprod() - 1) * 100
+
+    fig = make_subplots(
+        rows=3, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.06,
+        subplot_titles=["Rolling Sharpe Ratio", "Rolling Volatility (%)", "Cumulative Return (%)"],
+    )
+
+    # Sharpe
+    fig.add_trace(
+        go.Scatter(
+            x=rolling_sharpe.index, y=rolling_sharpe.values,
+            mode="lines", name="Sharpe",
+            line=dict(color="#00D4AA", width=2),
+        ), row=1, col=1
+    )
+    fig.add_hline(y=1.0, line_dash="dot", line_color="rgba(255,255,255,0.3)",
+                  annotation_text="Good (1.0)", row=1, col=1)
+    fig.add_hline(y=0.0, line_dash="dot", line_color="rgba(255,68,68,0.3)",
+                  row=1, col=1)
+
+    # Volatility
+    fig.add_trace(
+        go.Scatter(
+            x=rolling_vol.index, y=rolling_vol.values,
+            mode="lines", name="Volatility",
+            line=dict(color="#FF6B6B", width=2),
+        ), row=2, col=1
+    )
+
+    # Cumulative Return
+    fig.add_trace(
+        go.Scatter(
+            x=cum_return.index, y=cum_return.values,
+            fill="tozeroy", name="Cum. Return",
+            line=dict(color="#4ECDC4", width=2),
+            fillcolor="rgba(78, 205, 196, 0.2)",
+        ), row=3, col=1
+    )
+
+    fig.update_layout(
+        template="plotly_dark",
+        height=700,
+        margin=dict(l=20, r=20, t=30, b=20),
+        showlegend=False,
+    )
+    st.plotly_chart(fig, width='stretch')
+
+
+def render_stress_test(stress_results: list[dict]) -> None:
+    """Render stress test scenario results."""
+    if not stress_results:
+        return
+
+    st.markdown("### ⚡ Stress Test Scenarios")
+
+    cols = st.columns(len(stress_results))
+    for i, scenario in enumerate(stress_results):
+        with cols[i]:
+            dd = scenario["max_drawdown_pct"]
+            color = "🟢" if dd > -15 else ("🟡" if dd > -30 else "🔴")
+            st.metric(
+                scenario["scenario"],
+                f"{scenario['total_return_pct']:+.1f}%",
+                delta=f"Max DD: {dd:.1f}%",
+                delta_color="inverse",
+            )
+            st.caption(scenario["description"])
+

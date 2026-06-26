@@ -9,6 +9,7 @@ information that wouldn't be available at trade time.
 Supports:
 - Long-only mode (default): BUY on signal=+1, SELL on signal=-1
 - Long-short mode (allow_short=True): Also opens shorts on signal=-1 when flat
+- ATR risk controls: stop losses, trailing stops, circuit breaker
 """
 
 import pandas as pd
@@ -20,6 +21,7 @@ from .portfolio import Portfolio
 from .transaction_costs import TransactionCosts
 from .position_sizing import PositionSizer
 from .order_manager import OrderManager
+from .risk_controls import RiskControls
 
 logger = get_logger(__name__)
 
@@ -30,10 +32,11 @@ class BacktestEngine:
 
     Flow for each trading day:
     1. Read the PREVIOUS day's signal (shifted by 1 to prevent look-ahead bias)
-    2. Execute trades at today's open price
-    3. Apply transaction costs (commission + slippage)
-    4. Mark-to-market at today's close price
-    5. Record portfolio equity
+    2. Check risk controls (stop losses, circuit breaker)
+    3. Execute trades at today's open price
+    4. Apply transaction costs (commission + slippage)
+    5. Mark-to-market at today's close price
+    6. Record portfolio equity
 
     Usage:
         engine = BacktestEngine(data=df_with_signals, ticker="AAPL")
@@ -52,6 +55,11 @@ class BacktestEngine:
         position_sizing_params: dict | None = None,
         allocation: float | None = None,
         allow_short: bool = False,
+        use_stops: bool = False,
+        atr_multiplier: float = 2.0,
+        use_trailing_stop: bool = True,
+        use_circuit_breaker: bool = False,
+        circuit_breaker_pct: float = -0.03,
     ):
         """
         Args:
@@ -64,6 +72,11 @@ class BacktestEngine:
             position_sizing_params: Extra params for the position sizer.
             allocation: Capital allocation fraction (0.0-1.0). Overrides config.
             allow_short: Whether to allow short selling.
+            use_stops: Enable ATR-based stop losses.
+            atr_multiplier: Stop distance in ATR units (1.5=tight, 2.0=standard, 3.0=wide).
+            use_trailing_stop: If True, stop follows price in favorable direction.
+            use_circuit_breaker: If True, halt trading on large daily losses.
+            circuit_breaker_pct: Daily loss threshold (e.g., -0.03 = -3%).
         """
         self.data = data.copy()
         if "signal" not in self.data.columns:
@@ -71,6 +84,7 @@ class BacktestEngine:
 
         self.ticker = ticker
         self.allow_short = allow_short
+        self.use_stops = use_stops
 
         # Load defaults from config, allow overrides
         try:
@@ -88,6 +102,14 @@ class BacktestEngine:
         self.portfolio = Portfolio(capital)
         self.tc = TransactionCosts(comm, slip)
         self.order_manager = OrderManager(self.portfolio, self.tc, allow_short=allow_short)
+
+        # Risk controls
+        self.risk = RiskControls(
+            atr_multiplier=atr_multiplier,
+            use_trailing_stop=use_trailing_stop,
+            circuit_breaker_pct=circuit_breaker_pct,
+            use_circuit_breaker=use_circuit_breaker,
+        )
 
         # Allocation priority: explicit param > position_sizing_params > config > default
         if allocation is not None:
@@ -115,6 +137,7 @@ class BacktestEngine:
         logger.info(f"  Capital: ${self.portfolio.initial_capital:,.2f}")
         logger.info(f"  Data points: {len(self.data)}")
         logger.info(f"  Short selling: {'Enabled' if self.allow_short else 'Disabled'}")
+        logger.info(f"  ATR Stops: {'Enabled' if self.use_stops else 'Disabled'}")
         logger.info(f"{'='*60}")
 
         # Sort by date and ensure we have clean data
@@ -126,44 +149,93 @@ class BacktestEngine:
         # ╚══════════════════════════════════════════════════════════╝
         self.data["trade_signal"] = self.data["signal"].shift(1).fillna(0)
 
+        # Pre-compute ATR for stop loss calculations
+        atr_series = None
+        if self.use_stops:
+            atr_series = self.risk.compute_atr(self.data)
+
+        prev_equity = self.portfolio.initial_capital
+
         # Day-by-day simulation
-        for _, row in self.data.iterrows():
+        for idx, row in self.data.iterrows():
             date = row["date"]
             open_price = row["open"]
             close_price = row["close"]
             signal = row["trade_signal"]
 
             current_position = self.portfolio.positions.get(self.ticker, 0)
+            current_atr = atr_series.iloc[idx] if atr_series is not None and idx < len(atr_series) else 0
+
+            # ── Risk Control: Circuit Breaker ──
+            if self.use_stops and prev_equity > 0:
+                current_equity = self.portfolio.cash + current_position * open_price
+                daily_pnl_pct = (current_equity - prev_equity) / prev_equity
+                if self.risk.check_circuit_breaker(daily_pnl_pct):
+                    # Circuit breaker tripped — skip trading, just mark-to-market
+                    self.portfolio.update_equity(date, {self.ticker: close_price})
+                    continue
+
+            # ── Risk Control: Stop Loss Check ──
+            stop_triggered = False
+            if self.use_stops and self.risk.in_position and current_position != 0:
+                stop_triggered = self.risk.check_stop(open_price, current_atr)
+                if stop_triggered:
+                    # Force exit at open price
+                    if current_position > 0:
+                        self.order_manager.execute_trade(
+                            date, self.ticker, "SELL", current_position, open_price
+                        )
+                    elif current_position < 0:
+                        self.order_manager.execute_trade(
+                            date, self.ticker, "BUY", abs(current_position), open_price
+                        )
+                    self.risk.reset()
+                    current_position = self.portfolio.positions.get(self.ticker, 0)
 
             # Execute trades based on yesterday's signal, at today's open
-            if signal == 1 and current_position <= 0:
-                if current_position < 0:
-                    # Cover the short first
-                    cover_qty = abs(current_position)
-                    self.order_manager.execute_trade(date, self.ticker, "BUY", cover_qty, open_price)
+            if not stop_triggered:
+                if signal == 1 and current_position <= 0:
+                    if current_position < 0:
+                        # Cover the short first
+                        cover_qty = abs(current_position)
+                        self.order_manager.execute_trade(date, self.ticker, "BUY", cover_qty, open_price)
+                        self.risk.reset()
 
-                # BUY signal — enter long position
-                qty = self.sizer.get_quantity(open_price, self.portfolio.cash)
-                if qty > 0:
-                    self.order_manager.execute_trade(date, self.ticker, "BUY", qty, open_price)
-
-            elif signal == -1 and current_position >= 0:
-                if current_position > 0:
-                    # SELL signal — exit long position
-                    self.order_manager.execute_trade(
-                        date, self.ticker, "SELL", current_position, open_price
-                    )
-
-                if self.allow_short and self.portfolio.positions.get(self.ticker, 0) == 0:
-                    # Open a short position
+                    # BUY signal — enter long position
                     qty = self.sizer.get_quantity(open_price, self.portfolio.cash)
                     if qty > 0:
+                        self.order_manager.execute_trade(date, self.ticker, "BUY", qty, open_price)
+                        if self.use_stops and current_atr > 0:
+                            self.risk.on_entry(open_price, current_atr, "long")
+
+                elif signal == -1 and current_position >= 0:
+                    if current_position > 0:
+                        # SELL signal — exit long position
                         self.order_manager.execute_trade(
-                            date, self.ticker, "SELL", qty, open_price
+                            date, self.ticker, "SELL", current_position, open_price
                         )
+                        self.risk.reset()
+
+                    if self.allow_short and self.portfolio.positions.get(self.ticker, 0) == 0:
+                        # Open a short position
+                        qty = self.sizer.get_quantity(open_price, self.portfolio.cash)
+                        if qty > 0:
+                            self.order_manager.execute_trade(
+                                date, self.ticker, "SELL", qty, open_price
+                            )
+                            if self.use_stops and current_atr > 0:
+                                self.risk.on_entry(open_price, current_atr, "short")
 
             # End-of-day mark-to-market
             self.portfolio.update_equity(date, {self.ticker: close_price})
+
+            # Track previous day equity for circuit breaker
+            equity_curve = self.portfolio.equity_curve
+            if equity_curve:
+                prev_equity = equity_curve[-1]["total_equity"]
+
+            # Reset daily circuit breaker
+            self.risk.reset_daily()
 
         # Log summary
         self._log_summary()
