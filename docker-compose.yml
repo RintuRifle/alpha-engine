@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  alpha-engine:
+    build: .
+    container_name: alpha-engine
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

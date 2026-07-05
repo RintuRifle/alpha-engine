@@ -1,18 +1,28 @@
 <div align="center">
 
-# 📈 Quant Research Platform 
-(Status: Developement Phase)
+# <i class="fa-solid fa-layer-group"></i> Alpha Engine
+*(Previously Quant Research Platform)*
 
-**A production-ready quantitative research and backtesting platform built with Python.**
+**Institutional-grade quantitative research, backtesting, and portfolio optimization platform built with Python.**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-55%20Passed-brightgreen.svg)](#testing)
-[![Code Coverage](https://img.shields.io/badge/Coverage-70%25+-yellow.svg)](#testing)
 
-*Backtest trading strategies with real market data, analyze performance metrics, and visualize results through an interactive Streamlit dashboard.*
+*Architected for high-performance backtesting, dynamic walk-forward optimization, and rigorous statistical validation of trading strategies.*
 
 </div>
+
+---
+
+## 🎯 Project Highlights (Resume/CV)
+
+**Key Achievements:**
+- **High-Performance Backtesting Engine:** Engineered a vectorized, event-driven backtester processing millions of candles with sub-second latency using Parquet serialization and PyArrow.
+- **Statistical Rigor & Risk Management:** Implemented 15+ institutional-grade metrics (Sharpe, Sortino, Tail Ratio, Omega) alongside dynamic ATR stop-losses, trailing stops, and portfolio circuit breakers.
+- **Dynamic Walk-Forward Optimization:** Built a robust out-of-sample validation framework utilizing parallel grid search (`joblib`) to dynamically re-optimize parameters across rolling time windows, aggressively mitigating overfitting.
+- **Multi-Asset Portfolio Analysis:** Developed a multi-threaded portfolio backtesting mode calculating asset correlations and blended equity curves for true diversification testing.
+- **Regime-Aware Signal Gating:** Designed an automated market regime detector (ADX/Volatility) that filters signals based on market conditions, ensuring strategies only deploy capital in compatible environments.
 
 ---
 

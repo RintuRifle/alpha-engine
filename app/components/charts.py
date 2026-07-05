@@ -29,7 +29,7 @@ def render_equity_curve(
         st.warning("No equity data to display.")
         return
 
-    st.markdown("### 📈 Equity Curve")
+    st.markdown("### <i class='fa-solid fa-chart-line' style='color: #00D4AA;'></i> Equity Curve", unsafe_allow_html=True)
 
     fig = go.Figure()
 
@@ -75,7 +75,7 @@ def render_drawdown_chart(equity_df: pd.DataFrame) -> None:
     if equity_df.empty:
         return
 
-    st.markdown("### 📉 Drawdown")
+    st.markdown("### <i class='fa-solid fa-arrow-trend-down' style='color: #FF4444;'></i> Drawdown", unsafe_allow_html=True)
 
     equity = equity_df["total_equity"]
     cummax = equity.cummax()
@@ -109,7 +109,7 @@ def render_returns_histogram(equity_df: pd.DataFrame) -> None:
     if equity_df.empty or len(equity_df) < 2:
         return
 
-    st.markdown("### 📊 Returns Distribution")
+    st.markdown("### <i class='fa-solid fa-chart-simple' style='color: #4ECDC4;'></i> Returns Distribution", unsafe_allow_html=True)
 
     returns = equity_df["total_equity"].pct_change().dropna() * 100
 
@@ -148,7 +148,7 @@ def render_monte_carlo(sim_df: pd.DataFrame, percentiles: dict) -> None:
     if sim_df.empty:
         return
 
-    st.markdown("### 🎲 Monte Carlo Simulation (1000 paths)")
+    st.markdown("### <i class='fa-solid fa-dice' style='color: #45B7D1;'></i> Monte Carlo Simulation (1000 paths)", unsafe_allow_html=True)
 
     fig = go.Figure()
 
@@ -209,7 +209,7 @@ def render_rolling_metrics(equity_df: pd.DataFrame, window: int = 60) -> None:
         st.info(f"Need at least {window + 10} data points for rolling metrics.")
         return
 
-    st.markdown(f"### 📈 Rolling Metrics ({window}-day window)")
+    st.markdown(f"### <i class='fa-solid fa-chart-line' style='color: #00D4AA;'></i> Rolling Metrics ({window}-day window)", unsafe_allow_html=True)
 
     returns = equity_df["total_equity"].pct_change().dropna()
 
@@ -277,7 +277,7 @@ def render_stress_test(stress_results: list[dict]) -> None:
     if not stress_results:
         return
 
-    st.markdown("### ⚡ Stress Test Scenarios")
+    st.markdown("### <i class='fa-solid fa-bolt' style='color: #FFD93D;'></i> Stress Test Scenarios", unsafe_allow_html=True)
 
     cols = st.columns(len(stress_results))
     for i, scenario in enumerate(stress_results):

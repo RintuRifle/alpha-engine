@@ -181,7 +181,7 @@ def render_comparison(comparison_data: dict, initial_capital: float = 10000.0):
     regime_df = comparison_data["regime_df"]
 
     # ── Comparison Table ──
-    st.markdown("### 🏆 Strategy Ranking")
+    st.markdown("### <i class='fa-solid fa-trophy' style='color: #FFD700;'></i> Strategy Ranking", unsafe_allow_html=True)
     df_results = pd.DataFrame(results)
 
     # Display columns (exclude internal/error columns)
@@ -216,14 +216,15 @@ def render_comparison(comparison_data: dict, initial_capital: float = 10000.0):
     if results:
         winner = results[0]
         st.success(
-            f"🥇 **{winner['Strategy']}** wins with Composite Score: **{winner.get('Composite', 0):.3f}** "
+            f"**{winner['Strategy']}** wins with Composite Score: **{winner.get('Composite', 0):.3f}** "
             f"| CAGR: {winner.get('CAGR (%)', 0):+.2f}% "
             f"| Sharpe: {winner.get('Sharpe', 0):.3f} "
-            f"| Max DD: {winner.get('Max DD (%)', 0):.2f}%"
+            f"| Max DD: {winner.get('Max DD (%)', 0):.2f}%",
+            icon=":material/emoji_events:"
         )
 
     # ── Overlaid Equity Curves ──
-    st.markdown("### 📈 Equity Curves Comparison")
+    st.markdown("### <i class='fa-solid fa-chart-line' style='color: #4ECDC4;'></i> Equity Curves Comparison", unsafe_allow_html=True)
     fig = go.Figure()
 
     colors = [
@@ -253,7 +254,7 @@ def render_comparison(comparison_data: dict, initial_capital: float = 10000.0):
     st.plotly_chart(fig, width='stretch')
 
     # ── Regime Overlay ──
-    st.markdown("### 🌡️ Market Regime")
+    st.markdown("### <i class='fa-solid fa-temperature-half' style='color: #FF6B6B;'></i> Market Regime", unsafe_allow_html=True)
     _render_regime_chart(regime_df)
 
 
@@ -312,6 +313,6 @@ def _render_regime_chart(regime_df: pd.DataFrame):
     if "regime" in regime_df.columns:
         counts = regime_df["regime"].value_counts()
         col1, col2, col3 = st.columns(3)
-        col1.metric("🟢 Trending", f"{counts.get('trending', 0)} days")
-        col2.metric("🟡 Ranging", f"{counts.get('ranging', 0)} days")
-        col3.metric("🔴 Crisis", f"{counts.get('crisis', 0)} days")
+        col1.metric("Trending", f"{counts.get('trending', 0)} days")
+        col2.metric("Ranging", f"{counts.get('ranging', 0)} days")
+        col3.metric("Crisis", f"{counts.get('crisis', 0)} days")

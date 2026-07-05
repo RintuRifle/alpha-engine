@@ -17,10 +17,10 @@ def render_sidebar() -> Dict[str, Any]:
     Returns:
         Dict with all user-selected parameters.
     """
-    st.sidebar.markdown("## ⚙️ Configuration")
+    st.sidebar.markdown("## <i class='fa-solid fa-gear' style='color: #4ECDC4;'></i> Configuration", unsafe_allow_html=True)
 
     # ── Ticker Input ──
-    st.sidebar.markdown("### 📊 Asset")
+    st.sidebar.markdown("### <i class='fa-solid fa-chart-simple' style='color: #4ECDC4;'></i> Asset", unsafe_allow_html=True)
     ticker = st.sidebar.text_input(
         "Ticker Symbol",
         value="AAPL",
@@ -28,7 +28,7 @@ def render_sidebar() -> Dict[str, Any]:
     )
 
     # ── Date Range ──
-    st.sidebar.markdown("### 📅 Date Range")
+    st.sidebar.markdown("### <i class='fa-regular fa-calendar-days' style='color: #4ECDC4;'></i> Date Range", unsafe_allow_html=True)
     col1, col2 = st.sidebar.columns(2)
     start_date = col1.date_input(
         "Start",
@@ -37,7 +37,7 @@ def render_sidebar() -> Dict[str, Any]:
     end_date = col2.date_input("End", value=date.today())
 
     # ── Capital ──
-    st.sidebar.markdown("### 💰 Capital")
+    st.sidebar.markdown("### <i class='fa-solid fa-sack-dollar' style='color: #4ECDC4;'></i> Capital", unsafe_allow_html=True)
     capital = st.sidebar.number_input(
         "Initial Capital ($)",
         min_value=1000,
@@ -47,7 +47,7 @@ def render_sidebar() -> Dict[str, Any]:
     )
 
     # ── Strategy Selection ──
-    st.sidebar.markdown("### 🧠 Strategy")
+    st.sidebar.markdown("### <i class='fa-solid fa-brain' style='color: #4ECDC4;'></i> Strategy", unsafe_allow_html=True)
     strategy = st.sidebar.selectbox(
         "Select Strategy",
         [
@@ -58,6 +58,7 @@ def render_sidebar() -> Dict[str, Any]:
             "Multi-Factor",
             "Momentum + MR",
             "Buy & Hold",
+            "Custom Builder",
         ],
     )
 
@@ -138,7 +139,7 @@ def render_sidebar() -> Dict[str, Any]:
         )
 
     # ── Engine Settings ──
-    st.sidebar.markdown("### ⚡ Engine Settings")
+    st.sidebar.markdown("### <i class='fa-solid fa-bolt' style='color: #FFD93D;'></i> Engine Settings", unsafe_allow_html=True)
     allocation = st.sidebar.slider(
         "Capital Allocation %",
         min_value=10,
@@ -154,7 +155,7 @@ def render_sidebar() -> Dict[str, Any]:
     )
 
     # ── Risk Management ──
-    st.sidebar.markdown("### 🛡️ Risk Management")
+    st.sidebar.markdown("### <i class='fa-solid fa-shield-halved' style='color: #FF6B6B;'></i> Risk Management", unsafe_allow_html=True)
     use_stops = st.sidebar.checkbox(
         "ATR Stop Losses",
         value=False,
@@ -196,15 +197,24 @@ def render_sidebar() -> Dict[str, Any]:
             ) / 100.0
 
     # ── Monte Carlo Settings ──
-    st.sidebar.markdown("### 🎲 Monte Carlo")
+    st.sidebar.markdown("### <i class='fa-solid fa-dice' style='color: #9B59B6;'></i> Monte Carlo", unsafe_allow_html=True)
     stress_test = st.sidebar.checkbox(
         "Stress Test Scenarios",
         value=False,
         help="Inject 2008/COVID/rate-hike crash patterns into 10% of simulation paths.",
     )
 
+    # ── Intelligence ──
+    st.sidebar.markdown("### <i class='fa-solid fa-network-wired' style='color: #3498DB;'></i> Intelligence", unsafe_allow_html=True)
+    regime_gate = st.sidebar.checkbox(
+        "Regime Gating",
+        value=False,
+        help="Auto-disable strategy signals in incompatible market regimes. "
+             "E.g., RSI signals are zeroed out during strong trends.",
+    )
+
     # ── Benchmark ──
-    st.sidebar.markdown("### 📈 Benchmark")
+    st.sidebar.markdown("### <i class='fa-solid fa-arrow-trend-up' style='color: #2ECC71;'></i> Benchmark", unsafe_allow_html=True)
     benchmark = st.sidebar.selectbox(
         "Benchmark Ticker",
         ["SPY", "^GSPC", "^NSEI", "QQQ"],
@@ -230,4 +240,6 @@ def render_sidebar() -> Dict[str, Any]:
         "use_circuit_breaker": use_circuit_breaker,
         "circuit_breaker_pct": circuit_breaker_pct,
         "stress_test": stress_test,
+        "regime_gate": regime_gate,
     }
+

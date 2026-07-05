@@ -187,3 +187,104 @@ class WalkForward:
                 })
 
         return results
+
+    @staticmethod
+    def optimize_windows(
+        df: pd.DataFrame,
+        strategy_class: Type,
+        param_grid: dict,
+        backtest_engine_class: Type,
+        ticker: str,
+        n_splits: int = 5,
+        train_ratio: float = 0.7,
+        initial_capital: float = 10000.0,
+        metric: str = "sharpe_ratio",
+    ) -> List[dict]:
+        """
+        Run a walk-forward optimization.
+        
+        For each rolling window:
+        1. Run grid search optimization on the train data to find best_params.
+        2. Apply best_params to the test data.
+        3. Record the test metrics.
+        """
+        from src.analytics.parallel_optimizer import ParallelOptimizer
+        
+        windows = WalkForward.rolling_windows(df, n_splits, train_ratio)
+        results = []
+
+        for i, (train_df, test_df) in enumerate(windows):
+            try:
+                # 1. Optimize on Train Data
+                logger.info(f"Optimizing Window {i+1}/{n_splits} on Train Data...")
+                opt_result = ParallelOptimizer.grid_search(
+                    strategy_class=strategy_class,
+                    param_grid=param_grid,
+                    data=train_df,
+                    backtest_engine_class=backtest_engine_class,
+                    ticker=ticker,
+                    initial_capital=initial_capital,
+                    metric=metric,
+                    n_jobs=-1,
+                )
+                
+                if not opt_result or not opt_result.get("best_params"):
+                    raise ValueError("Optimization failed to find valid parameters.")
+                    
+                best_params = opt_result["best_params"]
+                train_metric = opt_result["best_metric_value"]
+
+                # 2. Test on Test Data using best_params
+                strategy = strategy_class(**best_params)
+                test_signals = strategy.generate_signals(test_df)
+                
+                engine = backtest_engine_class(
+                    data=test_signals, 
+                    ticker=ticker, 
+                    initial_capital=initial_capital
+                )
+                portfolio = engine.run()
+                equity_df = portfolio.get_equity_df()
+                
+                # We need Metrics to get returns and sharpe
+                from src.analytics.metrics import Metrics
+                test_ret = Metrics.total_return(equity_df) if not equity_df.empty else 0
+                test_sharpe = Metrics.sharpe_ratio(equity_df) if not equity_df.empty else 0
+                
+                # Compute train returns for comparison (from best opt_result all_results)
+                # Find the result matching best_params
+                train_ret = 0
+                train_sharpe = 0
+                for r in opt_result.get("all_results", []):
+                    if r.get("params") == best_params:
+                        train_ret = r.get("cagr", 0)  # Total return approx
+                        train_sharpe = r.get("sharpe_ratio", 0)
+                        break
+
+                results.append({
+                    "Window": i + 1,
+                    "Train Size": len(train_df),
+                    "Test Size": len(test_df),
+                    "Optimal Params": best_params,
+                    "Train Return (%)": round(train_ret * 100, 2),
+                    "Test Return (%)": round(test_ret * 100, 2),
+                    "Train Sharpe": round(train_sharpe, 3),
+                    "Test Sharpe": round(test_sharpe, 3),
+                    "Test Trades": len(portfolio.trade_history),
+                })
+                
+                logger.info(f"Window {i+1} Optimal Params: {best_params} -> Test Ret: {test_ret*100:+.2f}%")
+
+            except Exception as e:
+                logger.warning(f"Walk-forward optimization window {i+1} failed: {e}")
+                results.append({
+                    "Window": i + 1,
+                    "Train Size": len(train_df),
+                    "Test Size": len(test_df),
+                    "Optimal Params": {},
+                    "Train Return (%)": 0,
+                    "Test Return (%)": 0,
+                    "Error": str(e),
+                })
+
+        return results
