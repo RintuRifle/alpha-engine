@@ -249,8 +249,8 @@ def _run_backtest(inputs: dict) -> None:
                 f"⚠️ **0 trades executed.** "
                 f"{inputs['ticker']} opened at **${first_price:.2f}** on the first day. "
                 f"Your capital is **${inputs['capital']:,}**. "
-                f"Even the 1-share fallback couldn't execute — this usually means the stock "
-                f"price exceeds your available capital. Try increasing your initial capital."
+                f"0 trades usually means one of two things: either the stock price exceeds your available capital, "
+                f"OR your strategy generated 0 buy signals (e.g. your indicators require more historical data than is available)."
             )
 
         # ── Step 5: Fetch Benchmark ──
