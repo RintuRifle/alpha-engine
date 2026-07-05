@@ -75,7 +75,11 @@ class MarketDataFetcher:
         logger.info(f"Fetching {ticker} from {start_date} to {end_date}")
 
         try:
-            df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            from curl_cffi import requests
+            # Use curl_cffi to impersonate Chrome and bypass Yahoo Finance TLS fingerprinting blocks
+            session = requests.Session(impersonate="chrome")
+            
+            df = yf.download(ticker, start=start_date, end=end_date, progress=False, session=session)
 
             if df.empty:
                 raise DataFetchError(
