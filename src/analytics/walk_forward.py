@@ -82,25 +82,34 @@ class WalkForward:
             return []
 
         total_len = len(df)
-        window_size = total_len // n_splits
+        min_train_size = int(total_len * train_ratio)
+        test_data_len = total_len - min_train_size
+        
+        if test_data_len <= 0 or min_train_size <= 0:
+            return []
+            
+        test_window_size = max(1, test_data_len // n_splits)
         windows: List[Tuple[pd.DataFrame, pd.DataFrame]] = []
 
         for i in range(n_splits):
-            start = i * window_size
-            end = start + window_size if i < n_splits - 1 else total_len
+            train_start = i * test_window_size
+            train_end = min_train_size + i * test_window_size
+            
+            # The last window should consume whatever is left
+            test_end = train_end + test_window_size if i < n_splits - 1 else total_len
+            
+            if train_end >= total_len:
+                break
 
-            window_df = df.iloc[start:end]
-            split_idx = int(len(window_df) * train_ratio)
-
-            train = window_df.iloc[:split_idx].copy()
-            test = window_df.iloc[split_idx:].copy()
+            train = df.iloc[train_start:train_end].copy()
+            test = df.iloc[train_end:test_end].copy()
 
             if not train.empty and not test.empty:
                 windows.append((train, test))
                 logger.info(
                     f"Window {i+1}/{n_splits}: "
-                    f"train [{start}:{start+split_idx}] ({len(train)} rows), "
-                    f"test [{start+split_idx}:{end}] ({len(test)} rows)"
+                    f"train [{train_start}:{train_end}] ({len(train)} rows), "
+                    f"test [{train_end}:{test_end}] ({len(test)} rows)"
                 )
 
         return windows
@@ -142,13 +151,21 @@ class WalkForward:
 
         for i, (train_df, test_df) in enumerate(windows):
             try:
-                # Create strategy and generate signals on test data
+                # Create strategy
                 strategy = strategy_class(**strategy_params)
-                test_with_signals = strategy.generate_signals(test_df)
+                
+                # To prevent indicator warmup starvation on short test datasets,
+                # generate signals on the combined data up to the end of test,
+                # then extract just the test period.
+                end_date = test_df.index[-1]
+                data_for_signals = df.loc[:end_date].copy()
+                
+                full_signals = strategy.generate_signals(data_for_signals)
+                test_signals = full_signals.loc[test_df.index].copy()
 
                 # Run backtest on test data
                 engine = backtest_engine_class(
-                    data=test_with_signals,
+                    data=test_signals,
                     ticker=ticker,
                     initial_capital=initial_capital,
                 )
@@ -235,7 +252,14 @@ class WalkForward:
 
                 # 2. Test on Test Data using best_params
                 strategy = strategy_class(**best_params)
-                test_signals = strategy.generate_signals(test_df)
+                
+                # To prevent indicator warmup starvation on short test datasets,
+                # generate signals on the combined data up to the end of test.
+                end_date = test_df.index[-1]
+                data_for_signals = df.loc[:end_date].copy()
+                
+                full_signals = strategy.generate_signals(data_for_signals)
+                test_signals = full_signals.loc[test_df.index].copy()
                 
                 engine = backtest_engine_class(
                     data=test_signals, 
@@ -256,7 +280,7 @@ class WalkForward:
                 train_sharpe = 0
                 for r in opt_result.get("all_results", []):
                     if r.get("params") == best_params:
-                        train_ret = r.get("cagr", 0)  # Total return approx
+                        train_ret = r.get("total_return", 0)  # Use total_return instead of cagr for 1:1 comparison
                         train_sharpe = r.get("sharpe_ratio", 0)
                         break
 

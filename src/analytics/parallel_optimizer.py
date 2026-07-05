@@ -82,6 +82,7 @@ def _run_single_backtest(
             "params": params,
             metric: val,
             "cagr": metrics.get("cagr", 0.0),
+            "total_return": metrics.get("total_return", 0.0),
             "sharpe_ratio": metrics.get("sharpe_ratio", 0.0),
             "max_drawdown": metrics.get("max_drawdown", 0.0),
             "sortino_ratio": metrics.get("sortino_ratio", 0.0),
