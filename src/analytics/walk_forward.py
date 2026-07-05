@@ -218,10 +218,9 @@ class WalkForward:
                 # 1. Optimize on Train Data
                 logger.info(f"Optimizing Window {i+1}/{n_splits} on Train Data...")
                 opt_result = ParallelOptimizer.grid_search(
-                    strategy_class=strategy_class,
+                    strategy_name=strategy_class.__name__,
                     param_grid=param_grid,
                     data=train_df,
-                    backtest_engine_class=backtest_engine_class,
                     ticker=ticker,
                     initial_capital=initial_capital,
                     metric=metric,

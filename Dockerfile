@@ -1,5 +1,5 @@
-# Use Python 3.10 slim image for a smaller footprint
-FROM python:3.10-slim
+# Use Python 3.10 slim bookworm image for a stable Debian release
+FROM python:3.10-slim-bookworm
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1

@@ -21,11 +21,37 @@ def render_sidebar() -> Dict[str, Any]:
 
     # ── Ticker Input ──
     st.sidebar.markdown("### <i class='fa-solid fa-chart-simple' style='color: #4ECDC4;'></i> Asset", unsafe_allow_html=True)
-    ticker = st.sidebar.text_input(
-        "Ticker Symbol",
-        value="AAPL",
-        help="Enter any Yahoo Finance ticker (e.g., AAPL, MSFT, RELIANCE.NS)",
+    
+    POPULAR_TICKERS = {
+        "AAPL": "Apple Inc.",
+        "NVDA": "NVIDIA Corp.",
+        "MSFT": "Microsoft Corp.",
+        "GOOG": "Alphabet Inc.",
+        "AMZN": "Amazon.com",
+        "META": "Meta Platforms",
+        "TSLA": "Tesla Inc.",
+        "AMD": "Advanced Micro Devices",
+        "BRK-B": "Berkshire Hathaway",
+        "SPY": "S&P 500 ETF",
+        "QQQ": "Nasdaq 100 ETF",
+        "RELIANCE.NS": "Reliance Ind.",
+        "TCS.NS": "Tata Consultancy",
+        "INFY.NS": "Infosys Ltd.",
+        "Custom...": "Type your own ticker"
+    }
+    
+    ticker_choice = st.sidebar.selectbox(
+        "Search Asset / Company",
+        options=list(POPULAR_TICKERS.keys()),
+        format_func=lambda x: f"{x} — {POPULAR_TICKERS[x]}",
+        index=0,
+        help="Type a company name or ticker to search, or select 'Custom...' to enter any Yahoo Finance ticker."
     )
+    
+    if ticker_choice == "Custom...":
+        ticker = st.sidebar.text_input("Enter Custom Ticker", value="IBM", help="e.g., IBM, BA, TATAMOTORS.NS")
+    else:
+        ticker = ticker_choice
 
     # ── Date Range ──
     st.sidebar.markdown("### <i class='fa-regular fa-calendar-days' style='color: #4ECDC4;'></i> Date Range", unsafe_allow_html=True)

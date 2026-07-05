@@ -30,19 +30,44 @@ logger = get_logger(__name__)
 
 
 def _run_single_backtest(
-    strategy_class: Type,
+    strategy_name: str,
     params: dict,
     data: pd.DataFrame,
-    backtest_engine_class: Type,
     ticker: str,
     initial_capital: float,
     metric: str,
 ) -> dict:
     """Run a single backtest — designed to be called in parallel."""
     try:
+        # Import dynamically to avoid pickling issues with Streamlit reloading
+        from src.backtester.engine import BacktestEngine
+        from src.strategies.ma_crossover import MACrossover
+        from src.strategies.rsi_reversion import RSIReversion
+        from src.strategies.bollinger_bands import BollingerBands
+        from src.strategies.macd_strategy import MACDStrategy
+        from src.strategies.buy_and_hold import BuyAndHold
+        from src.strategies.multi_factor import MultiFactorStrategy
+        from src.strategies.momentum_mr import MomentumMR
+        from src.strategies.custom_builder import CustomStrategy
+        
+        STRATEGY_MAP = {
+            "MACrossover": MACrossover,
+            "RSIReversion": RSIReversion,
+            "BollingerBands": BollingerBands,
+            "MACDStrategy": MACDStrategy,
+            "MultiFactorStrategy": MultiFactorStrategy,
+            "MomentumMR": MomentumMR,
+            "BuyAndHold": BuyAndHold,
+            "CustomStrategy": CustomStrategy,
+        }
+        
+        strategy_class = STRATEGY_MAP.get(strategy_name)
+        if not strategy_class:
+            raise ValueError(f"Unknown strategy: {strategy_name}")
+            
         strategy = strategy_class(**params)
         df_signals = strategy.generate_signals(data)
-        engine = backtest_engine_class(
+        engine = BacktestEngine(
             data=df_signals, ticker=ticker, initial_capital=initial_capital
         )
         portfolio = engine.run()
@@ -69,10 +94,9 @@ class ParallelOptimizer:
 
     @staticmethod
     def grid_search(
-        strategy_class: Type,
+        strategy_name: str,
         param_grid: Dict[str, List[Any]],
         data: pd.DataFrame,
-        backtest_engine_class: Type,
         ticker: str = "AAPL",
         initial_capital: float = 10000.0,
         metric: str = "sharpe_ratio",
@@ -82,10 +106,9 @@ class ParallelOptimizer:
         Exhaustive parallel grid search over all parameter combinations.
 
         Args:
-            strategy_class: Strategy class to optimize.
+            strategy_name: Name of the strategy to optimize.
             param_grid: Dict mapping param names to value lists.
             data: OHLCV DataFrame.
-            backtest_engine_class: BacktestEngine class.
             ticker: Stock ticker.
             initial_capital: Starting capital per backtest.
             metric: Metric to maximize (default: sharpe_ratio).

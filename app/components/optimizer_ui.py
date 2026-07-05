@@ -88,10 +88,9 @@ def render_optimizer(
     if st.button("Run Optimization", icon=":material/bolt:", type="primary"):
         with st.spinner(f"Running {total_combos} backtests in parallel..."):
             results = ParallelOptimizer.grid_search(
-                strategy_class=strategy_class,
+                strategy_name=strategy_class.__name__,
                 param_grid=param_grid,
                 data=data,
-                backtest_engine_class=backtest_engine_class,
                 ticker=ticker,
                 initial_capital=initial_capital,
                 metric=metric,
