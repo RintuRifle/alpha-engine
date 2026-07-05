@@ -79,7 +79,11 @@ class MarketDataFetcher:
             # Use curl_cffi to impersonate Chrome and bypass Yahoo Finance TLS fingerprinting blocks
             session = requests.Session(impersonate="chrome")
             
-            df = yf.download(ticker, start=start_date, end=end_date, progress=False, session=session)
+            try:
+                df = yf.download(ticker, start=start_date, end=end_date, progress=False, session=session)
+            except Exception as e:
+                logger.warning(f"curl_cffi session failed for {ticker} ({e}), falling back to standard requests...")
+                df = yf.download(ticker, start=start_date, end=end_date, progress=False)
 
             if df.empty:
                 raise DataFetchError(

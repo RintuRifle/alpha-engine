@@ -1,5 +1,5 @@
-# Use Python 3.10 slim bookworm image for a stable Debian release
-FROM python:3.10-slim-bookworm
+# Use Python 3.10 slim bullseye image (Debian 11) for better compatibility with curl_cffi and BoringSSL
+FROM python:3.10-slim-bullseye
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -11,7 +11,7 @@ WORKDIR /app
 
 # Install system dependencies (needed for compiling some python packages)
 # Note: Changing debian sources to https to bypass ISP/Proxy interception
-RUN sed -i 's/http:/https:/g' /etc/apt/sources.list.d/debian.sources && \
+RUN sed -i 's/http:/https:/g' /etc/apt/sources.list && \
     apt-get update && apt-get install -y \
     build-essential \
     curl \
