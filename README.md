@@ -1,7 +1,6 @@
 <div align="center">
 
 # <i class="fa-solid fa-layer-group"></i> Alpha Engine
-*(Previously Quant Research Platform)*
 
 **Institutional-grade quantitative research, backtesting, and portfolio optimization platform built with Python.**
 
@@ -15,7 +14,7 @@
 
 ---
 
-## 🎯 Project Highlights (Resume/CV)
+## 🎯 Highlights
 
 **Key Achievements:**
 - **High-Performance Backtesting Engine:** Engineered a vectorized, event-driven backtester processing millions of candles with sub-second latency using Parquet serialization and PyArrow.
