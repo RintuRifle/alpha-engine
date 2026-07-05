@@ -85,6 +85,7 @@ def render_sidebar() -> Dict[str, Any]:
             "Momentum + MR",
             "Buy & Hold",
             "Custom Builder",
+            "VWAP Reversion",
         ],
     )
 
@@ -162,6 +163,18 @@ def render_sidebar() -> Dict[str, Any]:
         )
         strategy_params["trend_ma"] = st.sidebar.slider(
             "Trend MA Period", min_value=50, max_value=300, value=200, step=10
+        )
+
+    elif strategy == "VWAP Reversion":
+        st.sidebar.markdown("**VWAP Parameters**")
+        strategy_params["vwap_window"] = st.sidebar.slider(
+            "VWAP Window", min_value=5, max_value=60, value=20, step=5,
+            help="Rolling window for VWAP calculation"
+        )
+        strategy_params["threshold"] = st.sidebar.slider(
+            "Deviation Threshold", min_value=0.005, max_value=0.10, value=0.02, step=0.005,
+            format="%.3f",
+            help="How far price must deviate from VWAP to trigger a signal (0.02 = 2%)"
         )
 
     # ── Engine Settings ──

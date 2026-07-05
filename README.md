@@ -7,6 +7,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-55%20Passed-brightgreen.svg)](#testing)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](#docker-deployment)
 
 *Architected for high-performance backtesting, dynamic walk-forward optimization, and rigorous statistical validation of trading strategies.*
 
@@ -20,8 +21,9 @@
 - **High-Performance Backtesting Engine:** Engineered a vectorized, event-driven backtester processing millions of candles with sub-second latency using Parquet serialization and PyArrow.
 - **Statistical Rigor & Risk Management:** Implemented 15+ institutional-grade metrics (Sharpe, Sortino, Tail Ratio, Omega) alongside dynamic ATR stop-losses, trailing stops, and portfolio circuit breakers.
 - **Dynamic Walk-Forward Optimization:** Built a robust out-of-sample validation framework utilizing parallel grid search (`joblib`) to dynamically re-optimize parameters across rolling time windows, aggressively mitigating overfitting.
-- **Multi-Asset Portfolio Analysis:** Developed a multi-threaded portfolio backtesting mode calculating asset correlations and blended equity curves for true diversification testing.
+- **Multi-Asset Portfolio Analysis:** Developed a multi-threaded portfolio backtesting mode with correlation heatmap and diversification scoring for true portfolio-level testing.
 - **Regime-Aware Signal Gating:** Designed an automated market regime detector (ADX/Volatility) that filters signals based on market conditions, ensuring strategies only deploy capital in compatible environments.
+- **Live Execution Gateway:** Integrated Alpaca API for paper/live trading, translating strategy signals into real broker orders with a sync-to-target position management pattern.
 
 ---
 
@@ -30,10 +32,12 @@
 Retail traders and quant enthusiasts need a way to **backtest trading strategies** before risking real capital. This platform provides a modular, end-to-end pipeline:
 
 1. **Fetch** → Real market data via Yahoo Finance with smart caching
-2. **Signal** → Generate buy/sell signals using configurable strategies
+2. **Signal** → Generate buy/sell signals using 9 configurable strategies
 3. **Simulate** → Day-by-day backtesting with transaction costs and position sizing
 4. **Analyze** → 15+ performance metrics including Sharpe, Sortino, Alpha, VaR
-5. **Visualize** → Interactive dashboard with equity curves, drawdown charts, and Monte Carlo simulations
+5. **Optimize** → Parallel grid search & walk-forward validation
+6. **Visualize** → Interactive dashboard with equity curves, drawdown charts, Monte Carlo simulations
+7. **Execute** → Paper/live trading via Alpaca broker integration
 
 ---
 
@@ -46,9 +50,14 @@ flowchart TD
         Sidebar ~~~ Charts ~~~ UI_Metrics["Metrics"] ~~~ TradeLog["Trade Log"]
     end
 
+    subgraph Execution ["🔗 Execution Gateway"]
+        direction LR
+        Alpaca["Alpaca Broker"] ~~~ Gateway["Order Sync"]
+    end
+
     subgraph Analytics ["📊 Analytics Engine (analytics/)"]
         direction LR
-        MetricsMod["Metrics Module"] ~~~ RiskMgr["Risk Manager"] ~~~ MonteCarlo["Monte Carlo"] ~~~ Optimizer["Optimizer (Grid Search)"]
+        MetricsMod["Metrics Module"] ~~~ RiskMgr["Risk Manager"] ~~~ MonteCarlo["Monte Carlo"] ~~~ Optimizer["Parallel Optimizer"]
     end
 
     subgraph Backtest ["⚙️ Backtester Engine (backtester/)"]
@@ -58,14 +67,16 @@ flowchart TD
 
     subgraph Strategies ["🧠 Strategy Library (strategies/)"]
         direction LR
-        SMA["SMA Crossover"] ~~~ RSI["RSI Reversion"] ~~~ BB["Bollinger Bands"] ~~~ MACD["MACD Strategy"]
+        SMA["SMA Crossover"] ~~~ RSI["RSI Reversion"] ~~~ BB["Bollinger Bands"] ~~~ MACD["MACD"]
+        MF["Multi-Factor"] ~~~ MoMR["Momentum+MR"] ~~~ VWAP["VWAP"] ~~~ Custom["Custom Builder"]
     end
 
     subgraph Data ["💾 Data Layer (data/)"]
         direction LR
-        YF["yFinance Fetcher"] ~~~ DB[("SQLite Database")] ~~~ Cache["Cache Manager"] ~~~ Validator["Validator (Cleaning)"]
+        YF["yFinance Fetcher"] ~~~ DB[("SQLite Database")] ~~~ Cache["Cache Manager"] ~~~ Validator["Validator"]
     end
 
+    App --> Execution
     App --> Analytics
     Analytics --> Backtest
     Backtest --> Strategies
@@ -78,16 +89,22 @@ flowchart TD
 
 | Feature | Description |
 |---------|-------------|
-| **5 Trading Strategies** | SMA Crossover, RSI Mean Reversion, Bollinger Bands, MACD, Buy & Hold (benchmark) |
+| **9 Trading Strategies** | SMA Crossover, RSI Reversion, Bollinger Bands, MACD, Multi-Factor, Momentum+MR, VWAP Reversion, Buy & Hold, Custom Builder |
+| **Custom Strategy Builder** | Define custom indicators and signal logic using pandas expressions directly in the UI |
 | **Look-Ahead Bias Prevention** | `signal.shift(1)` ensures trades execute on T+1, not T |
 | **Smart Data Caching** | SQLite database with intelligent gap detection — only fetches missing date ranges |
 | **Transaction Costs** | Configurable commission (0.1%) and slippage (0.05%) applied to every trade |
 | **Position Sizing** | Fixed capital %, fixed shares, and Kelly Criterion methods |
 | **15+ Performance Metrics** | CAGR, Sharpe, Sortino, Calmar, Max DD, Win Rate, Profit Factor, VaR, CVaR, Alpha, Beta |
-| **Walk-Forward Analysis** | Rolling window out-of-sample testing to detect overfitting |
-| **Monte Carlo Simulation** | 1000 bootstrap paths for probabilistic risk assessment |
-| **Parameter Optimization** | Grid search to find optimal strategy parameters |
-| **Interactive Dashboard** | Streamlit UI with Plotly charts, benchmark comparison, and trade log |
+| **Walk-Forward Analysis** | Rolling window out-of-sample testing with dynamic optimization to detect overfitting |
+| **Monte Carlo Simulation** | 1000 bootstrap paths for probabilistic risk assessment with stress testing |
+| **Parallel Optimization** | Multi-core grid search using joblib to find optimal strategy parameters |
+| **Multi-Asset Portfolio** | Backtest across multiple tickers with correlation heatmap and diversification scoring |
+| **Regime Detection** | Automated market regime identification (ADX/Volatility) with signal gating |
+| **Live Execution** | Alpaca paper/live trading integration with sync-to-target position management |
+| **PDF Reports** | Professional 1-page PDF tear sheets with embedded equity curve and KPI table |
+| **Docker Deployment** | One-command deployment with `docker-compose up` |
+| **Interactive Dashboard** | Streamlit UI with Plotly charts, company name search, and benchmark comparison |
 | **Comprehensive Tests** | 55 unit tests covering all modules with deterministic fixtures |
 
 ---
@@ -120,6 +137,18 @@ copy .env.example .env       # Windows
 
 # 5. Launch the dashboard
 streamlit run app/streamlit_app.py
+```
+
+### Docker Deployment
+
+```bash
+# Build and run with Docker Compose
+docker-compose up -d --build
+
+# Access at http://localhost:8501
+
+# Stop the container
+docker-compose down
 ```
 
 ### Available Commands
@@ -155,8 +184,23 @@ Buy when price drops below the lower band, sell when price exceeds the upper ban
 Buy when MACD line crosses above signal line, sell when it crosses below.
 - **Parameters**: `fast_period` (12), `slow_period` (26), `signal_period` (9)
 
-### 5. Buy & Hold (Benchmark)
+### 5. Multi-Factor
+Composite scoring system combining SMA trend, RSI, Bollinger position, MACD, and volume analysis. Signals fire when the score exceeds a configurable threshold.
+- **Parameters**: `min_score` (3), `rsi_window` (14), `bb_window` (20), `bb_std` (2.0)
+
+### 6. Momentum + Mean Reversion
+Hybrid strategy that combines trend-following (200 MA filter) with mean-reversion (RSI dips in uptrends).
+- **Parameters**: `rsi_window` (14), `entry_rsi` (40), `exit_rsi` (55), `trend_ma` (200)
+
+### 7. VWAP Reversion
+Uses Volume-Weighted Average Price as a fair-value anchor. Buy when price deviates below VWAP, sell when it rises above.
+- **Parameters**: `vwap_window` (20), `threshold` (0.02)
+
+### 8. Buy & Hold (Benchmark)
 Always buy, never sell. The baseline every strategy is compared against.
+
+### 9. Custom Builder
+Define your own strategy in the UI using pandas expressions and configurable indicators (SMA, EMA, RSI, MACD).
 
 ---
 
@@ -172,7 +216,7 @@ pytest tests/ --cov=src --cov-report=term-missing -v
 
 **55 tests** across 4 test files covering:
 - Data validation (NaN handling, OHLCV sanity, volume checks)
-- Strategy signals (all 5 strategies, synthetic data verification)
+- Strategy signals (all strategies, synthetic data verification)
 - Backtester engine (equity curve, trades, transaction costs, position sizing)
 - Analytics (CAGR, Sharpe, Max DD, Win Rate with known values)
 
@@ -196,7 +240,12 @@ quant_research_platform/
 │   │   ├── rsi_reversion.py     # RSI mean reversion
 │   │   ├── bollinger_bands.py   # Bollinger band breakout
 │   │   ├── macd_strategy.py     # MACD signal crossover
-│   │   └── buy_and_hold.py      # Benchmark strategy
+│   │   ├── multi_factor.py      # Composite scoring (7 factors)
+│   │   ├── momentum_mr.py       # Trend + mean reversion hybrid
+│   │   ├── vwap_strategy.py     # VWAP reversion strategy
+│   │   ├── custom_builder.py    # User-defined pandas.eval() strategy
+│   │   ├── buy_and_hold.py      # Benchmark strategy
+│   │   └── regime_detector.py   # Market regime classifier (ADX/Vol)
 │   ├── backtester/
 │   │   ├── engine.py            # Day-by-day simulation (signal.shift(1)!)
 │   │   ├── portfolio.py         # Cash, positions, equity curve
@@ -208,9 +257,14 @@ quant_research_platform/
 │   │   ├── risk_manager.py      # VaR, CVaR, Alpha, Beta
 │   │   ├── benchmark.py         # SPY/NIFTY baseline comparison
 │   │   ├── walk_forward.py      # Rolling window out-of-sample testing
-│   │   ├── optimizer.py         # Grid search parameter optimization
+│   │   ├── optimizer.py         # Serial grid search
+│   │   ├── parallel_optimizer.py # Multi-core parallel grid search
 │   │   ├── monte_carlo.py       # 1000-path equity simulation
-│   │   └── report_generator.py  # QuantStats HTML tear sheets
+│   │   ├── report_generator.py  # QuantStats HTML tear sheets
+│   │   └── pdf_report.py        # PDF tear sheet generation
+│   ├── execution/
+│   │   ├── alpaca_broker.py     # Alpaca REST API wrapper
+│   │   └── gateway.py           # Signal-to-order translation engine
 │   └── utils/
 │       ├── logger.py            # RotatingFileHandler + console
 │       ├── helpers.py           # Config loader, formatters, utilities
@@ -219,20 +273,29 @@ quant_research_platform/
 ├── app/
 │   ├── streamlit_app.py         # Main dashboard entry point
 │   └── components/
-│       ├── sidebar.py           # Inputs, strategy params, date picker
+│       ├── sidebar.py           # Inputs, strategy params, company search
 │       ├── charts.py            # Plotly: equity, drawdown, histogram, MC
-│       └── metrics_display.py   # 8 KPI cards with color coding
+│       ├── metrics_display.py   # 8 KPI cards with color coding
+│       ├── optimizer_ui.py      # Parallel optimization UI + heatmap
+│       ├── walk_forward_ui.py   # Walk-forward analysis UI
+│       ├── multi_asset_ui.py    # Multi-asset backtest + correlation matrix
+│       ├── strategy_builder_ui.py # Custom strategy definition UI
+│       ├── strategy_comparison.py # Side-by-side strategy ranking
+│       └── execution_ui.py      # Live execution gateway UI
 ├── tests/
 │   ├── conftest.py              # Deterministic fixtures (seeded RNG)
 │   ├── test_data_ingestion.py   # 8 tests: validator + mocked fetcher
 │   ├── test_strategies.py       # 15 tests: all strategies + bias check
 │   ├── test_backtester.py       # 12 tests: engine, costs, sizing
 │   └── test_analytics.py        # 20 tests: metrics verification
+├── Dockerfile                   # Container definition
+├── docker-compose.yml           # One-command deployment
+├── .dockerignore                # Docker build exclusions
 ├── .env.example                 # Template for secrets
 ├── .gitignore                   # Excludes venv, data, logs, .env
 ├── Makefile                     # make run | test | coverage | lint
 ├── setup.py                     # Package installer
-├── requirements.txt             # Pinned dependencies
+├── requirements.txt             # Dependencies
 └── README.md                    # You are here
 ```
 

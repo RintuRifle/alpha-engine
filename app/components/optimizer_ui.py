@@ -46,6 +46,10 @@ PARAM_GRIDS = {
         "entry_rsi": list(range(25, 50, 5)),
         "exit_rsi": list(range(45, 75, 5)),
     },
+    "VWAP Reversion": {
+        "vwap_window": list(range(5, 60, 5)),
+        "threshold": [0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05],
+    },
 }
 
 

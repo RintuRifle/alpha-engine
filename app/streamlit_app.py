@@ -1,5 +1,5 @@
 """
-Quant Research Platform — Streamlit Dashboard
+Alpha Engine — Streamlit Dashboard
 
 Main entry point for the interactive web application.
 Wires together: data fetching, strategy execution, backtesting,
@@ -32,6 +32,7 @@ from src.strategies.buy_and_hold import BuyAndHold
 from src.strategies.multi_factor import MultiFactorStrategy
 from src.strategies.momentum_mr import MomentumMR
 from src.strategies.custom_builder import CustomStrategy
+from src.strategies.vwap_strategy import VWAPStrategy
 from src.strategies.regime_detector import RegimeDetector
 from src.backtester.engine import BacktestEngine
 from src.analytics.benchmark import Benchmark
@@ -46,7 +47,7 @@ from components.execution_ui import render_execution_ui
 
 # ── Page Config ──
 st.set_page_config(
-    page_title="Quant Research Platform",
+    page_title="Alpha Engine",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -62,6 +63,7 @@ STRATEGY_MAP = {
     "Momentum + MR": MomentumMR,
     "Buy & Hold": BuyAndHold,
     "Custom Builder": CustomStrategy,
+    "VWAP Reversion": VWAPStrategy,
 }
 
 
@@ -449,13 +451,16 @@ def _display_results(state: dict) -> None:
 
     # ── Tear Sheet Export ──
     st.markdown("---")
-    col_export1, col_export2, _ = st.columns([1, 1, 3])
+    col_export1, col_export2, col_export3, _ = st.columns([1, 1, 1, 2])
     with col_export1:
         if st.button("Generate Tear Sheet", icon=":material/description:"):
             _generate_tearsheet(equity_df, inputs)
     with col_export2:
         if st.button("Download Trade Log", icon=":material/download:"):
             _download_trade_log(portfolio.trade_history, inputs)
+    with col_export3:
+        if st.button("Download PDF Report", icon=":material/picture_as_pdf:"):
+            _generate_pdf_report(equity_df, portfolio, inputs, state)
 
 
 def _generate_tearsheet(equity_df: pd.DataFrame, inputs: dict) -> None:
@@ -503,6 +508,43 @@ def _download_trade_log(trade_history: list, inputs: dict) -> None:
         file_name=f"{inputs['ticker']}_{inputs['strategy'].replace(' ', '_')}_trades.csv",
         mime="text/csv",
     )
+
+
+def _generate_pdf_report(equity_df: pd.DataFrame, portfolio, inputs: dict, state: dict) -> None:
+    """Generate a PDF tear sheet and offer it for download."""
+    from src.analytics.pdf_report import generate_pdf_report
+    from src.analytics.metrics import Metrics
+
+    with st.spinner("Generating PDF report..."):
+        metrics = Metrics.compute_all(equity_df, portfolio.trade_history)
+        filename = f"reports/{inputs['ticker']}_{inputs['strategy'].replace(' ', '_')}_report.pdf"
+
+        result = generate_pdf_report(
+            equity_df=equity_df,
+            metrics=metrics,
+            strategy_name=state.get("strategy_name", inputs["strategy"]),
+            ticker=inputs["ticker"],
+            start_date=str(inputs["start_date"]),
+            end_date=str(inputs["end_date"]),
+            initial_capital=inputs["capital"],
+            trade_history=portfolio.trade_history,
+            benchmark_equity=state.get("benchmark_equity"),
+            output_path=filename,
+        )
+
+    if result and os.path.exists(result):
+        with open(result, "rb") as f:
+            pdf_data = f.read()
+        st.download_button(
+            "📥 Download PDF",
+            data=pdf_data,
+            file_name=os.path.basename(result),
+            mime="application/pdf",
+            icon=":material/picture_as_pdf:",
+        )
+        st.success("PDF report generated! Click above to download.", icon=":material/check_circle:")
+    else:
+        st.warning("PDF report generation failed. Make sure fpdf2 is installed: `pip install fpdf2`")
 
 
 if __name__ == "__main__":

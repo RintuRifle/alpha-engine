@@ -49,6 +49,7 @@ def _run_single_backtest(
         from src.strategies.multi_factor import MultiFactorStrategy
         from src.strategies.momentum_mr import MomentumMR
         from src.strategies.custom_builder import CustomStrategy
+        from src.strategies.vwap_strategy import VWAPStrategy
         
         STRATEGY_MAP = {
             "MACrossover": MACrossover,
@@ -59,6 +60,7 @@ def _run_single_backtest(
             "MomentumMR": MomentumMR,
             "BuyAndHold": BuyAndHold,
             "CustomStrategy": CustomStrategy,
+            "VWAPStrategy": VWAPStrategy,
         }
         
         strategy_class = STRATEGY_MAP.get(strategy_name)
@@ -130,7 +132,7 @@ class ParallelOptimizer:
         # Run in parallel
         all_results = Parallel(n_jobs=n_jobs, backend="loky")(
             delayed(_run_single_backtest)(
-                strategy_class, params, data, backtest_engine_class,
+                strategy_name, params, data,
                 ticker, initial_capital, metric
             )
             for params in param_dicts
