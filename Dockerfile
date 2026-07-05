@@ -10,7 +10,9 @@ ENV PYTHONPATH=/app
 WORKDIR /app
 
 # Install system dependencies (needed for compiling some python packages)
-RUN apt-get update && apt-get install -y \
+# Note: Changing debian sources to https to bypass ISP/Proxy interception
+RUN sed -i 's/http:/https:/g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
