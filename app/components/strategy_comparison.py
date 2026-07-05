@@ -20,6 +20,7 @@ from src.strategies.macd_strategy import MACDStrategy
 from src.strategies.buy_and_hold import BuyAndHold
 from src.strategies.multi_factor import MultiFactorStrategy
 from src.strategies.momentum_mr import MomentumMR
+from src.strategies.vwap_strategy import VWAPStrategy
 from src.strategies.regime_detector import RegimeDetector
 from src.backtester.engine import BacktestEngine
 from src.analytics.metrics import Metrics
@@ -32,6 +33,7 @@ DEFAULT_STRATEGIES = {
     "MACD": (MACDStrategy, {"fast_period": 12, "slow_period": 26, "signal_period": 9}),
     "Multi-Factor": (MultiFactorStrategy, {"min_score": 3}),
     "Momentum + MR": (MomentumMR, {"rsi_window": 14, "entry_rsi": 40, "exit_rsi": 55}),
+    "VWAP Reversion": (VWAPStrategy, {"window": 14, "std_dev": 2.0}),
     "Buy & Hold": (BuyAndHold, {}),
 }
 

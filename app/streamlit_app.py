@@ -24,6 +24,7 @@ import streamlit as st
 import pandas as pd
 
 from src.data.cache_manager import CacheManager
+from src.utils.exceptions import DataFetchError
 from src.strategies.ma_crossover import MACrossover
 from src.strategies.rsi_reversion import RSIReversion
 from src.strategies.bollinger_bands import BollingerBands
@@ -301,6 +302,9 @@ def _run_backtest(inputs: dict) -> None:
         # Display results
         _display_results(st.session_state)
 
+    except DataFetchError as e:
+        st.error(f"❌ Error: {e.message}")
+        st.warning("No data returned. The ticker may be delisted, renamed, or unavailable (e.g. TATAMOTORS.NS is now TMCV.NS).")
     except Exception as e:
         st.error(f"❌ Error: {e}")
         st.exception(e)
