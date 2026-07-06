@@ -2,7 +2,7 @@
 
 # <i class="fa-solid fa-layer-group"></i> Alpha Engine
 
-**Institutional-grade quantitative research, backtesting, and portfolio optimization platform built with Python.**
+**Advance quantitative research, backtesting, and portfolio optimization platform built with Python.**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
