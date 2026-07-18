@@ -8,6 +8,8 @@ export interface ConfigState {
   ticker: string;
   start_date: string;
   end_date: string;
+  interval: string;
+  intraday_square_off: boolean;
   capital: number;
   allocation: number;
   benchmark: string;
@@ -23,11 +25,37 @@ export interface ConfigState {
   stress_test: boolean;
 }
 
+// Yahoo Finance intraday history limits (calendar days back from today)
+export const INTERVAL_LIMITS: Record<string, number | null> = {
+  "1m": 7,
+  "5m": 60,
+  "15m": 60,
+  "30m": 60,
+  "1h": 730,
+  "1d": null,
+};
+
+const INTERVALS = ["1m", "5m", "15m", "30m", "1h", "1d"];
+
+export function clampStartForInterval(
+  interval: string,
+  start: string
+): string {
+  const limit = INTERVAL_LIMITS[interval];
+  if (limit == null) return start;
+  const min = new Date();
+  min.setDate(min.getDate() - (limit - 1));
+  const minIso = min.toISOString().slice(0, 10);
+  return start < minIso ? minIso : start;
+}
+
 export function toBacktestRequest(c: ConfigState): BacktestConfig {
   return {
     ticker: c.ticker,
     start_date: c.start_date,
     end_date: c.end_date,
+    interval: c.interval,
+    intraday_square_off: c.intraday_square_off,
     strategy: c.strategy,
     params: c.params,
     custom: c.strategy === "custom" ? c.custom : undefined,
@@ -111,6 +139,39 @@ export function ConfigPanel({
             placeholder="TICKER (e.g. AAPL, RELIANCE.NS)"
             className="font-semibold tracking-wider"
           />
+
+          {/* Timeframe */}
+          <div className="microlabel mt-3 mb-1.5">Timeframe</div>
+          <div className="grid grid-cols-6 gap-px bg-line border border-line rounded-sm overflow-hidden">
+            {INTERVALS.map((iv) => (
+              <button
+                key={iv}
+                onClick={() =>
+                  setConfig((c) => ({
+                    ...c,
+                    interval: iv,
+                    start_date: clampStartForInterval(iv, c.start_date),
+                    intraday_square_off:
+                      iv === "1d" ? false : c.intraday_square_off,
+                  }))
+                }
+                className={`py-1.5 text-micro font-mono uppercase transition-colors ${
+                  config.interval === iv
+                    ? "bg-amber text-black font-bold"
+                    : "bg-panel2 text-muted hover:text-text"
+                }`}
+              >
+                {iv}
+              </button>
+            ))}
+          </div>
+          {config.interval !== "1d" && (
+            <p className="text-micro text-dim mt-1 font-sans">
+              Yahoo serves ~{INTERVAL_LIMITS[config.interval]}d of{" "}
+              {config.interval} history — start date auto-clamped.
+            </p>
+          )}
+
           <div className="grid grid-cols-2 gap-2 mt-2">
             <div>
               <div className="microlabel mb-1">From</div>
@@ -228,6 +289,13 @@ export function ConfigPanel({
           </button>
           {showRisk && (
             <div className="mt-2 space-y-1">
+              {config.interval !== "1d" && (
+                <Toggle
+                  label="Intraday Square-Off (EOD flat)"
+                  checked={config.intraday_square_off}
+                  onChange={(v) => set("intraday_square_off", v)}
+                />
+              )}
               <Toggle
                 label="ATR Stop Losses"
                 checked={config.use_stops}

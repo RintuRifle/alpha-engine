@@ -9,6 +9,11 @@ export function PriceChart({ result }: { result: BacktestResult }) {
   const ref = useChart(
     460,
     (chart) => {
+      if (result.interval && result.interval !== "1d") {
+        chart.applyOptions({
+          timeScale: { timeVisible: true, secondsVisible: false },
+        });
+      }
       const candles = chart.addCandlestickSeries({
         upColor: CHART_COLORS.up,
         downColor: CHART_COLORS.down,

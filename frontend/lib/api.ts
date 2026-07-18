@@ -22,8 +22,11 @@ export interface StrategySchema {
   params: ParamSchema[];
 }
 
+/** Daily bars use "YYYY-MM-DD" strings; intraday bars use unix seconds. */
+export type BarTime = string | number;
+
 export interface Candle {
-  time: string;
+  time: BarTime;
   open: number;
   high: number;
   low: number;
@@ -32,7 +35,7 @@ export interface Candle {
 }
 
 export interface Trade {
-  time: string;
+  time: BarTime;
   action: "BUY" | "SELL" | "SHORT" | "COVER";
   quantity: number;
   price: number;
@@ -41,7 +44,7 @@ export interface Trade {
 }
 
 export interface EquityPoint {
-  time: string;
+  time: BarTime;
   equity: number;
   drawdown: number;
 }
@@ -54,18 +57,19 @@ export interface BacktestResult {
   params: Record<string, number>;
   start_date: string;
   end_date: string;
+  interval: string;
   metrics: Record<string, number | null>;
   candles: Candle[];
   trades: Trade[];
   equity: EquityPoint[];
-  benchmark: { time: string; equity: number }[] | null;
+  benchmark: { time: BarTime; equity: number }[] | null;
   monthly_returns: {
     years: number[];
     data: (number | null)[][];
     yearly: (number | null)[];
   };
   rolling: {
-    time: string;
+    time: BarTime;
     sharpe: number | null;
     sortino: number | null;
     volatility: number | null;
@@ -87,7 +91,7 @@ export interface BacktestResult {
     stats: Record<string, number>;
     stress?: Record<string, unknown>[];
   } | null;
-  regimes: { time: string; regime: string }[];
+  regimes: { time: BarTime; regime: string }[];
   warning: string | null;
 }
 
@@ -159,6 +163,8 @@ export interface BacktestConfig {
   ticker: string;
   start_date: string;
   end_date: string;
+  interval: string;
+  intraday_square_off: boolean;
   strategy: string;
   params: Record<string, number>;
   custom?: {
@@ -211,12 +217,14 @@ export const api = {
     ticker: string;
     start_date: string;
     end_date: string;
+    interval: string;
     capital: number;
   }) => post<{ job_id: string }>("/api/v1/compare/run", cfg),
   runOptimize: (cfg: {
     ticker: string;
     start_date: string;
     end_date: string;
+    interval: string;
     strategy: string;
     param_grid: Record<string, number[]>;
     metric: string;
@@ -226,6 +234,7 @@ export const api = {
     ticker: string;
     start_date: string;
     end_date: string;
+    interval: string;
     strategy: string;
     params: Record<string, number>;
     n_splits: number;

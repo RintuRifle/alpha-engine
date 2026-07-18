@@ -41,6 +41,36 @@ def _dstr(ts) -> str:
     return pd.Timestamp(ts).strftime("%Y-%m-%d")
 
 
+def _bar_time(ts, intraday: bool):
+    """Chart time value: date string for daily, unix seconds for intraday.
+    Naive exchange-local treated as UTC → lightweight-charts displays
+    exchange-local wall time."""
+    if intraday:
+        return int(pd.Timestamp(ts).timestamp())
+    return _dstr(ts)
+
+
+INTERVAL_LIMIT_DAYS = {
+    "1m": 7, "2m": 60, "5m": 60, "15m": 60, "30m": 60, "1h": 730, "1d": None,
+}
+
+
+def _validate_interval(interval: str, start: str, end: str):
+    if interval not in INTERVAL_LIMIT_DAYS:
+        raise ValueError(
+            f"Unknown interval '{interval}'. Valid: {list(INTERVAL_LIMIT_DAYS)}"
+        )
+    limit = INTERVAL_LIMIT_DAYS[interval]
+    if limit is not None:
+        days_back = (pd.Timestamp.now() - pd.Timestamp(start)).days
+        if days_back > limit:
+            raise ValueError(
+                f"Yahoo Finance serves at most ~{limit} days of {interval} history. "
+                f"Requested start is {days_back} days back — move the start date "
+                f"within the last {limit} days or use a coarser interval."
+            )
+
+
 def _series_points(s: pd.Series, key: str = "value") -> List[dict]:
     return [{"time": _dstr(t), key: _f(v)} for t, v in s.items()]
 
@@ -56,11 +86,14 @@ def _downsample(items: list, max_points: int = 400) -> list:
     return out
 
 
-def _fetch(ticker: str, start: str, end: str) -> pd.DataFrame:
+def _fetch(ticker: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame:
+    _validate_interval(interval, start, end)
     cache = CacheManager()
-    df = cache.get_data(ticker, start, end)
+    df = cache.get_data(ticker, start, end, interval=interval)
     if df is None or df.empty:
-        raise ValueError(f"No data returned for {ticker} ({start} → {end})")
+        raise ValueError(
+            f"No data returned for {ticker} ({start} → {end}, {interval})"
+        )
     return df
 
 
@@ -92,12 +125,12 @@ def _apply_regime_gate(strategy, df, regime_df, label):
     return df_signals
 
 
-def _equity_payload(equity_df: pd.DataFrame) -> List[dict]:
+def _equity_payload(equity_df: pd.DataFrame, intraday: bool = False) -> List[dict]:
     eq = equity_df["total_equity"]
     peak = eq.cummax()
     dd = (eq / peak - 1.0)
     return [
-        {"time": _dstr(t), "equity": _f(e), "drawdown": _f(d)}
+        {"time": _bar_time(t, intraday), "equity": _f(e), "drawdown": _f(d)}
         for t, e, d in zip(eq.index, eq.values, dd.values)
     ]
 
@@ -129,7 +162,9 @@ def _monthly_returns(equity_df: pd.DataFrame) -> dict:
     }
 
 
-def _rolling_metrics(equity_df: pd.DataFrame, window: int = 60) -> List[dict]:
+def _rolling_metrics(
+    equity_df: pd.DataFrame, window: int = 60, intraday: bool = False
+) -> List[dict]:
     rets = equity_df["total_equity"].pct_change()
     mean = rets.rolling(window).mean()
     std = rets.rolling(window).std()
@@ -140,7 +175,7 @@ def _rolling_metrics(equity_df: pd.DataFrame, window: int = 60) -> List[dict]:
     out = []
     for t in rets.index[window:]:
         out.append({
-            "time": _dstr(t),
+            "time": _bar_time(t, intraday),
             "sharpe": _f(sharpe.loc[t]),
             "sortino": _f(sortino.loc[t]),
             "volatility": _f(vol.loc[t]),
@@ -164,14 +199,14 @@ def _returns_hist(equity_df: pd.DataFrame, bins: int = 40) -> dict:
     }
 
 
-def _regime_segments(regime_df: pd.DataFrame) -> List[dict]:
+def _regime_segments(regime_df: pd.DataFrame, intraday: bool = False) -> List[dict]:
     if regime_df is None or "regime" not in regime_df.columns or regime_df.empty:
         return []
     out = []
     prev = None
     for t, r in regime_df["regime"].items():
         if r != prev:
-            out.append({"time": _dstr(t), "regime": str(r)})
+            out.append({"time": _bar_time(t, intraday), "regime": str(r)})
             prev = r
     return out
 
@@ -183,12 +218,18 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
     ticker = req["ticker"].upper().strip()
     start, end = req["start_date"], req["end_date"]
     capital = float(req.get("capital", 100000))
+    interval = req.get("interval", "1d")
+    intraday = interval != "1d"
 
-    progress(5, f"Fetching data for {ticker}...")
-    df = _fetch(ticker, start, end)
+    progress(5, f"Fetching {ticker} @ {interval}...")
+    df = _fetch(ticker, start, end, interval)
 
     progress(15, "Detecting market regime...")
     regime_df = RegimeDetector().detect(df)
+    # Align regime rows to real timestamps (df uses a RangeIndex + date column)
+    if "date" in df.columns and len(regime_df) == len(df):
+        regime_df = regime_df.copy()
+        regime_df.index = pd.to_datetime(df["date"]).values
 
     progress(25, f"Generating signals...")
     spec, strategy = _build_strategy(
@@ -211,6 +252,7 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
         use_trailing_stop=bool(req.get("use_trailing_stop", True)),
         use_circuit_breaker=bool(req.get("use_circuit_breaker", False)),
         circuit_breaker_pct=float(req.get("circuit_breaker_pct", -0.03)),
+        intraday_square_off=bool(req.get("intraday_square_off", False)) and intraday,
     )
     portfolio = engine.run()
     equity_df = portfolio.get_equity_df()
@@ -227,19 +269,24 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
     progress(70, f"Fetching benchmark ({req.get('benchmark', 'SPY')})...")
     benchmark_payload = None
     bench_metrics = {}
-    try:
-        bench_ticker = req.get("benchmark", "SPY")
-        bench_eq = Benchmark.get_benchmark_equity(
-            bench_ticker, start, end, initial_value=capital
-        )
-        if bench_eq is not None and len(bench_eq) > 0:
-            bseries = bench_eq if isinstance(bench_eq, pd.Series) else bench_eq.iloc[:, 0]
-            benchmark_payload = [
-                {"time": _dstr(t), "equity": _f(v)} for t, v in bseries.items()
-            ]
-            bench_metrics["benchmark_return"] = _f(bseries.iloc[-1] / bseries.iloc[0] - 1)
-    except Exception:
-        benchmark_payload = None
+    # Daily benchmark can't be aligned honestly against an intraday equity
+    # curve — skip rather than mislead.
+    if not intraday:
+        try:
+            bench_ticker = req.get("benchmark", "SPY")
+            bench_eq = Benchmark.get_benchmark_equity(
+                bench_ticker, start, end, initial_value=capital
+            )
+            if bench_eq is not None and len(bench_eq) > 0:
+                bseries = bench_eq if isinstance(bench_eq, pd.Series) else bench_eq.iloc[:, 0]
+                benchmark_payload = [
+                    {"time": _dstr(t), "equity": _f(v)} for t, v in bseries.items()
+                ]
+                bench_metrics["benchmark_return"] = _f(
+                    bseries.iloc[-1] / bseries.iloc[0] - 1
+                )
+        except Exception:
+            benchmark_payload = None
 
     progress(85, "Running Monte Carlo simulation...")
     port_returns = equity_df["total_equity"].pct_change().dropna()
@@ -271,18 +318,19 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
         mc_payload = None
 
     progress(95, "Packaging results...")
+    df_idx = df.set_index("date") if "date" in df.columns else df
     candles = [
         {
-            "time": _dstr(t),
+            "time": _bar_time(t, intraday),
             "open": _f(r["open"]), "high": _f(r["high"]),
             "low": _f(r["low"]), "close": _f(r["close"]),
             "volume": _f(r.get("volume", 0)),
         }
-        for t, r in df.iterrows()
+        for t, r in df_idx.iterrows()
     ]
     trades = [
         {
-            "time": _dstr(t["date"]),
+            "time": _bar_time(t["date"], intraday),
             "action": str(t["action"]),
             "quantity": _f(t["quantity"]),
             "price": _f(t["price"]),
@@ -321,16 +369,17 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
         "params": req.get("params", {}),
         "start_date": start,
         "end_date": end,
+        "interval": interval,
         "metrics": {**metrics, **bench_metrics},
         "candles": candles,
         "trades": trades,
-        "equity": _equity_payload(equity_df),
+        "equity": _equity_payload(equity_df, intraday),
         "benchmark": benchmark_payload,
         "monthly_returns": _monthly_returns(equity_df),
-        "rolling": _rolling_metrics(equity_df),
+        "rolling": _rolling_metrics(equity_df, intraday=intraday),
         "returns_hist": _returns_hist(equity_df),
         "monte_carlo": mc_payload,
-        "regimes": _regime_segments(regime_df),
+        "regimes": _regime_segments(regime_df, intraday),
         "warning": warning,
     }
 
@@ -340,9 +389,11 @@ def run_compare_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
     ticker = req["ticker"].upper().strip()
     start, end = req["start_date"], req["end_date"]
     capital = float(req.get("capital", 100000))
+    interval = req.get("interval", "1d")
+    intraday = interval != "1d"
 
-    progress(5, f"Fetching data for {ticker}...")
-    df = _fetch(ticker, start, end)
+    progress(5, f"Fetching {ticker} @ {interval}...")
+    df = _fetch(ticker, start, end, interval)
 
     keys = [k for k in STRATEGIES if k != "custom"]
     results = []
@@ -366,7 +417,7 @@ def run_compare_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
                 "label": spec["label"],
                 "metrics": {k: _f(v) for k, v in metrics.items()},
                 "final_equity": _f(equity_df["total_equity"].iloc[-1]),
-                "equity": _downsample(_equity_payload(equity_df), 300),
+                "equity": _downsample(_equity_payload(equity_df, intraday), 300),
             })
         except Exception as e:
             results.append({"key": key, "label": spec["label"], "error": str(e)})
@@ -386,7 +437,7 @@ def run_optimize_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("param_grid is required")
 
     progress(5, f"Fetching data for {ticker}...")
-    df = _fetch(ticker, req["start_date"], req["end_date"])
+    df = _fetch(ticker, req["start_date"], req["end_date"], req.get("interval", "1d"))
 
     total = 1
     for v in param_grid.values():
@@ -442,7 +493,7 @@ def run_walkforward_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
     spec, _ = get_strategy(req["strategy"]), None
 
     progress(5, f"Fetching data for {ticker}...")
-    df = _fetch(ticker, req["start_date"], req["end_date"])
+    df = _fetch(ticker, req["start_date"], req["end_date"], req.get("interval", "1d"))
 
     progress(20, "Running walk-forward windows...")
     results = WalkForward.run_walk_forward(
@@ -479,17 +530,20 @@ def run_walkforward_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def get_ohlcv(ticker: str, start: str, end: str) -> Dict[str, Any]:
-    df = _fetch(ticker.upper().strip(), start, end)
+def get_ohlcv(ticker: str, start: str, end: str, interval: str = "1d") -> Dict[str, Any]:
+    intraday = interval != "1d"
+    df = _fetch(ticker.upper().strip(), start, end, interval)
+    df_idx = df.set_index("date") if "date" in df.columns else df
     return {
         "ticker": ticker.upper().strip(),
+        "interval": interval,
         "candles": [
             {
-                "time": _dstr(t),
+                "time": _bar_time(t, intraday),
                 "open": _f(r["open"]), "high": _f(r["high"]),
                 "low": _f(r["low"]), "close": _f(r["close"]),
                 "volume": _f(r.get("volume", 0)),
             }
-            for t, r in df.iterrows()
+            for t, r in df_idx.iterrows()
         ],
     }

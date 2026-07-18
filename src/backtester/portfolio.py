@@ -34,5 +34,10 @@ class Portfolio:
         # Index must be DatetimeIndex so CAGR / Sharpe date arithmetic works
         df["date"] = pd.to_datetime(df["date"])
         df.set_index("date", inplace=True)
-        df.index = df.index.normalize()   # strip time component → date only
+        # Normalize (strip time) ONLY for daily bars — intraday equity curves
+        # need their timestamps for charts + timeframe-aware annualization.
+        if len(df) > 2:
+            med = df.index.to_series().diff().median()
+            if pd.notna(med) and med >= pd.Timedelta(days=1):
+                df.index = df.index.normalize()
         return df

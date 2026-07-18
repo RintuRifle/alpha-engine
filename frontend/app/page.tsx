@@ -51,6 +51,8 @@ const DEFAULT_CONFIG: ConfigState = {
   ticker: "AAPL",
   start_date: isoDaysAgo(365 * 3),
   end_date: todayIso(),
+  interval: "1d",
+  intraday_square_off: false,
   capital: 100000,
   allocation: 0.95,
   benchmark: "SPY",
@@ -115,6 +117,7 @@ export default function Terminal() {
         ticker: config.ticker,
         start_date: config.start_date,
         end_date: config.end_date,
+        interval: config.interval,
         capital: config.capital,
       });
       setCompare(

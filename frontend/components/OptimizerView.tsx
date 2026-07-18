@@ -82,6 +82,7 @@ export function OptimizerView({
         ticker: config.ticker,
         start_date: config.start_date,
         end_date: config.end_date,
+        interval: config.interval,
         strategy: config.strategy,
         param_grid: grid,
         metric,

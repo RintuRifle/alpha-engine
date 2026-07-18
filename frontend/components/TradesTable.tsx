@@ -1,7 +1,7 @@
 "use client";
 
 import type { BacktestResult } from "@/lib/api";
-import { fmtNum } from "@/lib/format";
+import { fmtNum, fmtBarTime } from "@/lib/format";
 import { Panel } from "./Panel";
 
 const ACTION_COLOR: Record<string, string> = {
@@ -62,7 +62,7 @@ export function TradesTable({ result }: { result: BacktestResult }) {
             {result.trades.map((t, i) => (
               <tr key={i}>
                 <td className="text-dim">{i + 1}</td>
-                <td className="tabular-nums">{t.time}</td>
+                <td className="tabular-nums">{fmtBarTime(t.time)}</td>
                 <td
                   className={`font-semibold ${ACTION_COLOR[t.action] ?? ""}`}
                 >

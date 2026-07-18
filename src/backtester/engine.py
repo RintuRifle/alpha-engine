@@ -60,10 +60,15 @@ class BacktestEngine:
         use_trailing_stop: bool = True,
         use_circuit_breaker: bool = False,
         circuit_breaker_pct: float = -0.03,
+        intraday_square_off: bool = False,
     ):
         """
         Args:
             data: DataFrame with OHLCV data and a 'signal' column from a strategy.
+                Works with any bar frequency (1m…1D) — signals execute on the
+                NEXT bar's open, and risk resets are per session, not per bar.
+            intraday_square_off: If True, force-close open positions on the
+                last bar of each session (intraday-only strategies).
             ticker: Stock ticker being backtested.
             initial_capital: Starting cash. Defaults to config.yaml value.
             commission: Commission rate. Defaults to config.yaml value.
@@ -85,6 +90,7 @@ class BacktestEngine:
         self.ticker = ticker
         self.allow_short = allow_short
         self.use_stops = use_stops
+        self.intraday_square_off = intraday_square_off
 
         # Load defaults from config, allow overrides
         try:
@@ -141,11 +147,18 @@ class BacktestEngine:
         logger.info(f"{'='*60}")
 
         # Sort by date and ensure we have clean data
+        self.data["date"] = pd.to_datetime(self.data["date"])
         self.data = self.data.sort_values("date").reset_index(drop=True)
+
+        # Session bookkeeping (timeframe-agnostic):
+        # a "session" is a calendar date on the exchange-local clock.
+        session_ids = self.data["date"].dt.date
+        # True on the last bar of each session (incl. very last bar)
+        is_session_end = (session_ids != session_ids.shift(-1)).values
 
         # ╔══════════════════════════════════════════════════════════╗
         # ║ CRITICAL: shift(1) prevents look-ahead bias!           ║
-        # ║ Signal generated at day T → trade executes at day T+1  ║
+        # ║ Signal generated at bar T → trade executes at bar T+1  ║
         # ╚══════════════════════════════════════════════════════════╝
         self.data["trade_signal"] = self.data["signal"].shift(1).fillna(0)
 
@@ -155,9 +168,15 @@ class BacktestEngine:
             atr_series = self.risk.compute_atr(self.data)
 
         prev_equity = self.portfolio.initial_capital
+        prev_session = None
 
-        # Day-by-day simulation
+        # Bar-by-bar simulation (daily or intraday)
         for idx, row in self.data.iterrows():
+            # New session → reset the per-session circuit breaker
+            bar_session = session_ids.iloc[idx]
+            if prev_session is not None and bar_session != prev_session:
+                self.risk.reset_daily()
+            prev_session = bar_session
             date = row["date"]
             open_price = row["open"]
             close_price = row["close"]
@@ -230,16 +249,27 @@ class BacktestEngine:
                             if self.use_stops and current_atr > 0:
                                 self.risk.on_entry(open_price, current_atr, "short")
 
-            # End-of-day mark-to-market
+            # ── Intraday square-off: force-flat on the session's last bar ──
+            if self.intraday_square_off and is_session_end[idx]:
+                pos = self.portfolio.positions.get(self.ticker, 0)
+                if pos > 0:
+                    self.order_manager.execute_trade(
+                        date, self.ticker, "SELL", pos, close_price
+                    )
+                    self.risk.reset()
+                elif pos < 0:
+                    self.order_manager.execute_trade(
+                        date, self.ticker, "BUY", abs(pos), close_price
+                    )
+                    self.risk.reset()
+
+            # End-of-bar mark-to-market
             self.portfolio.update_equity(date, {self.ticker: close_price})
 
-            # Track previous day equity for circuit breaker
+            # Track previous bar equity for circuit breaker
             equity_curve = self.portfolio.equity_curve
             if equity_curve:
                 prev_equity = equity_curve[-1]["total_equity"]
-
-            # Reset daily circuit breaker
-            self.risk.reset_daily()
 
         # Log summary
         self._log_summary()

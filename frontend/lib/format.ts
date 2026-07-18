@@ -21,6 +21,16 @@ export const fmtCompact = (v: number | null | undefined) =>
 export const signColor = (v: number | null | undefined) =>
   v == null ? "text-muted" : v >= 0 ? "text-up" : "text-down";
 
+/** Render a chart bar time (date string or unix seconds) as human text. */
+export const fmtBarTime = (t: string | number): string => {
+  if (typeof t === "number") {
+    const d = new Date(t * 1000);
+    // naive exchange-local stored as UTC → display UTC fields
+    return d.toISOString().slice(0, 16).replace("T", " ");
+  }
+  return t;
+};
+
 export const MONTHS = [
   "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
   "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",

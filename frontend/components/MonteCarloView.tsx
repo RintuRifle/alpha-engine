@@ -8,16 +8,18 @@ import { useChart } from "./useChart";
 import { fmtPct, fmtNum } from "@/lib/format";
 import { Panel } from "./Panel";
 
-/** Fake future dates for the x-axis (252 trading days ≈ 1 year). */
-function mcTime(i: number, lastDate: string): string {
-  const d = new Date(lastDate);
+/** Fake future dates for the x-axis (252 bars projected forward). */
+function mcTime(i: number, last: string | number): string {
+  const d =
+    typeof last === "number" ? new Date(last * 1000) : new Date(last);
   d.setDate(d.getDate() + Math.round((i + 1) * 1.45));
   return d.toISOString().slice(0, 10);
 }
 
 export function MonteCarloView({ result }: { result: BacktestResult }) {
   const mc = result.monte_carlo;
-  const last = result.equity[result.equity.length - 1]?.time ?? "2026-01-01";
+  const last: string | number =
+    result.equity[result.equity.length - 1]?.time ?? "2026-01-01";
 
   const ref = useChart(
     320,

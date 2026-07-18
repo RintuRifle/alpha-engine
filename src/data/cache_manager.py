@@ -1,10 +1,13 @@
 """
 Smart cache manager for market data.
 
-Checks the SQLite database first, then only fetches missing date ranges
-from the API. Merges cached + fresh data and returns a complete DataFrame.
+Daily data: SQLite-backed range cache (fetch only the missing ranges).
+Intraday data: Parquet-backed best-effort cache — Yahoo only serves short
+intraday history windows, so we fetch fresh, persist to Parquet, and fall
+back to the cache when the API is unavailable.
 """
 
+import os
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -15,6 +18,8 @@ from src.data.validator import DataValidator
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+INTRADAY_CACHE_DIR = "data/intraday"
 
 
 class CacheManager:
@@ -33,10 +38,71 @@ class CacheManager:
         self.validator = DataValidator()
 
     def get_data(
+        self, ticker: str, start_date: str, end_date: str, interval: str = "1d"
+    ) -> pd.DataFrame:
+        """
+        Get OHLCV data for a ticker at any interval, using cache when possible.
+        Intraday intervals route to the Parquet cache; '1d' uses SQLite.
+        """
+        if interval != "1d":
+            return self._get_intraday(ticker, start_date, end_date, interval)
+        return self._get_daily(ticker, start_date, end_date)
+
+    def _get_intraday(
+        self, ticker: str, start_date: str, end_date: str, interval: str
+    ) -> pd.DataFrame:
+        """Fetch-fresh-first intraday flow with Parquet fallback cache."""
+        os.makedirs(INTRADAY_CACHE_DIR, exist_ok=True)
+        cache_path = os.path.join(
+            INTRADAY_CACHE_DIR, f"{ticker.replace('/', '_')}_{interval}.parquet"
+        )
+
+        df = None
+        try:
+            df = self.fetcher.fetch_ohlcv(ticker, start_date, end_date, interval)
+        except Exception as e:
+            logger.warning(f"Intraday fetch failed for {ticker}@{interval}: {e}")
+
+        if df is not None and not df.empty:
+            # Merge with existing cache (dedupe on timestamp, keep newest)
+            try:
+                if os.path.exists(cache_path):
+                    old = pd.read_parquet(cache_path)
+                    df = (
+                        pd.concat([old, df])
+                        .drop_duplicates(subset=["date"], keep="last")
+                        .sort_values("date")
+                    )
+                df.to_parquet(cache_path, index=False)
+            except Exception as e:
+                logger.warning(f"Intraday cache write failed: {e}")
+        elif os.path.exists(cache_path):
+            logger.info(f"Falling back to intraday Parquet cache: {cache_path}")
+            df = pd.read_parquet(cache_path)
+
+        if df is None or df.empty:
+            from src.utils.exceptions import DataFetchError
+            raise DataFetchError(
+                f"No intraday data for {ticker} @ {interval} "
+                f"({start_date} → {end_date}). Yahoo limits intraday history "
+                f"(1m≈7d, 5m/15m≈60d, 1h≈730d).",
+                ticker=ticker,
+            )
+
+        # Slice to requested window (date column is exchange-local naive)
+        df = df.copy()
+        df["date"] = pd.to_datetime(df["date"])
+        mask = (df["date"] >= pd.Timestamp(start_date)) & (
+            df["date"] < pd.Timestamp(end_date) + pd.Timedelta(days=1)
+        )
+        df = df.loc[mask].drop_duplicates(subset=["date"]).sort_values("date")
+        return self.validator.clean_and_validate(df, min_rows=30)
+
+    def _get_daily(
         self, ticker: str, start_date: str, end_date: str
     ) -> pd.DataFrame:
         """
-        Get OHLCV data for a ticker, using DB cache when possible.
+        Get daily OHLCV data for a ticker, using DB cache when possible.
 
         Logic:
         1. Check if DB has data for the requested date range

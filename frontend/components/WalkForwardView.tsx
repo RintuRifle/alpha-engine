@@ -22,6 +22,7 @@ export function WalkForwardView({ config }: { config: ConfigState }) {
         ticker: config.ticker,
         start_date: config.start_date,
         end_date: config.end_date,
+        interval: config.interval,
         strategy: config.strategy,
         params: config.params,
         n_splits: nSplits,

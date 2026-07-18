@@ -53,6 +53,8 @@ class BacktestRequest(BaseModel):
     ticker: str = Field(..., min_length=1, max_length=20)
     start_date: str
     end_date: str
+    interval: str = "1d"  # 1m | 2m | 5m | 15m | 30m | 1h | 1d
+    intraday_square_off: bool = False
     strategy: str
     params: Dict[str, Any] = {}
     custom: Optional[CustomSpec] = None
@@ -75,6 +77,7 @@ class CompareRequest(BaseModel):
     ticker: str
     start_date: str
     end_date: str
+    interval: str = "1d"
     capital: float = 100000
     allocation: float = 0.95
 
@@ -83,6 +86,7 @@ class OptimizeRequest(BaseModel):
     ticker: str
     start_date: str
     end_date: str
+    interval: str = "1d"
     strategy: str
     param_grid: Dict[str, List[Any]]
     metric: str = "sharpe_ratio"
@@ -94,6 +98,7 @@ class WalkForwardRequest(BaseModel):
     ticker: str
     start_date: str
     end_date: str
+    interval: str = "1d"
     strategy: str
     params: Dict[str, Any] = {}
     n_splits: int = 5
@@ -114,9 +119,9 @@ def strategies():
 
 
 @app.get("/api/v1/data/ohlcv")
-def ohlcv(ticker: str, start: str, end: str):
+def ohlcv(ticker: str, start: str, end: str, interval: str = "1d"):
     try:
-        return services.get_ohlcv(ticker, start, end)
+        return services.get_ohlcv(ticker, start, end, interval)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
