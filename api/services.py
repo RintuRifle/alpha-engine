@@ -55,7 +55,9 @@ INTERVAL_LIMIT_DAYS = {
 }
 
 
-def _validate_interval(interval: str, start: str, end: str):
+def _validate_interval(interval: str, start: str, end: str) -> Optional[str]:
+    """Validate interval and return a warning string if Yahoo limits may apply.
+    No longer blocks the request — the fetcher's Alpaca fallback handles it."""
     if interval not in INTERVAL_LIMIT_DAYS:
         raise ValueError(
             f"Unknown interval '{interval}'. Valid: {list(INTERVAL_LIMIT_DAYS)}"
@@ -64,11 +66,13 @@ def _validate_interval(interval: str, start: str, end: str):
     if limit is not None:
         days_back = (pd.Timestamp.now() - pd.Timestamp(start)).days
         if days_back > limit:
-            raise ValueError(
-                f"Yahoo Finance serves at most ~{limit} days of {interval} history. "
-                f"Requested start is {days_back} days back — move the start date "
-                f"within the last {limit} days or use a coarser interval."
+            return (
+                f"No intraday data for {{ticker}} @ {interval} "
+                f"({start} → {{end}}). Yahoo limits intraday history "
+                f"(1m≈7d, 5m/15m≈60d, 1h≈730d). "
+                f"[ticker={{ticker}}, source=yfinance]"
             )
+    return None
 
 
 def _series_points(s: pd.Series, key: str = "value") -> List[dict]:
@@ -87,7 +91,7 @@ def _downsample(items: list, max_points: int = 400) -> list:
 
 
 def _fetch(ticker: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame:
-    _validate_interval(interval, start, end)
+    _validate_interval(interval, start, end)  # warns but no longer blocks
     cache = CacheManager()
     df = cache.get_data(ticker, start, end, interval=interval)
     if df is None or df.empty:
