@@ -20,13 +20,18 @@ export function CompareView({ result }: { result: CompareResult | null }) {
 
   return (
     <div className="space-y-3">
-      <Panel title={`Strategy Arena — ${result.ticker} (ranked by Sharpe)`}>
+      <Panel
+        title={`Strategy Arena — ${result.ticker} (ranked by composite robustness)`}
+      >
         <div className="overflow-x-auto">
           <table className="term">
             <thead>
               <tr>
                 <th>Rank</th>
                 <th>Strategy</th>
+                <th title="Composite: Sharpe + Calmar + drawdown + profit factor, discounted for low trade counts">
+                  Robust
+                </th>
                 <th>Total Ret</th>
                 <th>CAGR</th>
                 <th>Sharpe</th>
@@ -52,6 +57,9 @@ export function CompareView({ result }: { result: CompareResult | null }) {
                     </td>
                     <td className={i === 0 ? "text-amber font-semibold" : ""}>
                       {r.label}
+                    </td>
+                    <td className="tabular-nums font-semibold">
+                      {r.robustness ?? "—"}
                     </td>
                     <td
                       className={`tabular-nums ${

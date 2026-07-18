@@ -113,10 +113,12 @@ export interface CompareResult {
     key: string;
     label: string;
     metrics?: Record<string, number | null>;
+    robustness?: number | null;
     final_equity?: number;
     equity?: EquityPoint[];
     error?: string;
   }[];
+  ranked_by?: string;
 }
 
 export interface OptimizeResult {
@@ -140,19 +142,34 @@ export interface OptimizeResult {
     y_values: number[];
     z_values: (number | null)[][];
   } | null;
+  stability?: {
+    neighbor_ratio: number | null;
+    verdict: "plateau" | "moderate" | "spike";
+    n_neighbors: number;
+  } | null;
 }
 
 export interface WalkForwardResult {
   ticker: string;
   strategy_label: string;
+  mode?: "fixed" | "optimized";
+  embargo?: number;
   windows: {
     window: number;
     train_size: number;
     test_size: number;
     test_return: number | null;
+    train_return?: number | null;
+    train_sharpe?: number | null;
+    test_sharpe?: number | null;
+    params?: Record<string, number> | null;
     num_trades: number;
     error?: string | null;
   }[];
+  degradation?: {
+    avg_train_sharpe: number | null;
+    avg_test_sharpe: number | null;
+  } | null;
   summary: {
     avg_return: number | null;
     consistency: number | null;
@@ -252,6 +269,8 @@ export const api = {
     params: Record<string, number>;
     n_splits: number;
     capital: number;
+    optimize?: boolean;
+    embargo?: number;
   }) => post<{ job_id: string }>("/api/v1/walkforward/run", cfg),
   job: (id: string) => get<JobState>(`/api/v1/jobs/${id}`),
   liveAccount: () => get<Record<string, number | string>>("/api/v1/live/account"),

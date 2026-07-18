@@ -214,6 +214,28 @@ export function OptimizerView({
                   </span>
                 </div>
               </div>
+              {result.stability && (
+                <div>
+                  <div className="microlabel">Param Stability</div>
+                  <div
+                    className={`text-lg font-bold uppercase ${
+                      result.stability.verdict === "plateau"
+                        ? "text-up"
+                        : result.stability.verdict === "moderate"
+                        ? "text-amber"
+                        : "text-down"
+                    }`}
+                    title={`Neighbors perform at ${(
+                      (result.stability.neighbor_ratio ?? 0) * 100
+                    ).toFixed(0)}% of the best cell. Plateau = robust zone; spike = likely overfit.`}
+                  >
+                    {result.stability.verdict}
+                    <span className="text-xxs text-muted ml-1 normal-case">
+                      {((result.stability.neighbor_ratio ?? 0) * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </Panel>
 

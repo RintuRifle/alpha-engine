@@ -9,6 +9,7 @@ import type { ConfigState } from "./ConfigPanel";
 
 export function WalkForwardView({ config }: { config: ConfigState }) {
   const [nSplits, setNSplits] = useState(5);
+  const [optimize, setOptimize] = useState(true);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ pct: 0, msg: "" });
   const [result, setResult] = useState<WalkForwardResult | null>(null);
@@ -27,6 +28,8 @@ export function WalkForwardView({ config }: { config: ConfigState }) {
         params: config.params,
         n_splits: nSplits,
         capital: config.capital,
+        optimize,
+        embargo: 5,
       });
       setResult(
         await trackJob<WalkForwardResult>(job_id, (pct, msg) =>
@@ -62,7 +65,7 @@ export function WalkForwardView({ config }: { config: ConfigState }) {
           unseen test segments. Consistent positive returns across windows =
           robust strategy; wild variation = overfit.
         </p>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <label className="flex items-center gap-2">
             <span className="microlabel">Windows</span>
             <input
@@ -74,9 +77,17 @@ export function WalkForwardView({ config }: { config: ConfigState }) {
               className="!w-16"
             />
           </label>
+          <button
+            type="button"
+            onClick={() => setOptimize((v) => !v)}
+            className={`btn-ghost ${optimize ? "!text-amber !border-amber/60" : ""}`}
+          >
+            {optimize ? "◈ Optimized (train→freeze→test)" : "Fixed params"}
+          </button>
           <button className="btn-primary" disabled={running} onClick={run}>
             {running ? `${progress.pct}% ${progress.msg}` : "Run Analysis"}
           </button>
+          <span className="text-micro text-dim">embargo: 5 bars</span>
         </div>
         {error && <p className="text-xxs text-down mt-2">{error}</p>}
       </Panel>
@@ -110,6 +121,16 @@ export function WalkForwardView({ config }: { config: ConfigState }) {
                     <span className="text-micro text-dim">
                       {w.num_trades} trades
                     </span>
+                    {w.params && (
+                      <span
+                        className="text-micro text-dim text-center leading-tight"
+                        title="Params frozen from train-only optimization"
+                      >
+                        {Object.entries(w.params)
+                          .map(([k, v]) => `${k.slice(0, 5)}=${v}`)
+                          .join(" ")}
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -117,6 +138,28 @@ export function WalkForwardView({ config }: { config: ConfigState }) {
           </Panel>
 
           <Panel title="Verdict" delay={0.1}>
+            {result.degradation && (
+              <div className="mb-3 flex items-center gap-4 flex-wrap font-mono text-xxs">
+                <span className="microlabel">In-Sample vs Out-of-Sample Sharpe</span>
+                <span className="tabular-nums text-muted">
+                  train {result.degradation.avg_train_sharpe ?? "—"}
+                </span>
+                <span className="text-dim">→</span>
+                <span
+                  className={`tabular-nums font-semibold ${
+                    (result.degradation.avg_test_sharpe ?? 0) >=
+                    0.5 * (result.degradation.avg_train_sharpe ?? 0)
+                      ? "text-up"
+                      : "text-down"
+                  }`}
+                >
+                  test {result.degradation.avg_test_sharpe ?? "—"}
+                </span>
+                <span className="text-micro text-dim font-sans">
+                  large train→test drop = overfitting signal
+                </span>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-px bg-line border border-line rounded-sm overflow-hidden">
               <div className="bg-panel px-3 py-2.5">
                 <div className="microlabel">Avg Test Return</div>

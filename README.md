@@ -2,51 +2,49 @@
 
 # <i class="fa-solid fa-layer-group"></i> Alpha Engine
 
-**Advance quantitative research, backtesting, and portfolio optimization platform built with Python.**
+**Advanced quantitative research, backtesting, and portfolio optimization platform — Python engine, FastAPI backend, Next.js trading terminal.**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](#-web-terminal-v2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-55%20Passed-brightgreen.svg)](#testing)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](#docker-deployment)
+[![Tests](https://img.shields.io/badge/Tests-89%20Passed-brightgreen.svg)](#-testing)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](DEPLOYMENT.md)
 
-*Architected for high-performance backtesting, dynamic walk-forward optimization, and rigorous statistical validation of trading strategies.*
+*Timeframe-agnostic backtesting (1m → 1D), execution-realism modeling, walk-forward validation with strict train/test isolation, and a dark Bloomberg-style web terminal.*
 
 </div>
 
 ---
 
-> **🆕 v2 — Web Trading Terminal:** the engine now ships with a FastAPI backend (`/api`) and a
-> Next.js + TradingView terminal frontend (`/frontend`) — dark Bloomberg-style UI with
-> candlestick execution charts, monthly heatmaps, Monte Carlo fans, optimizer sensitivity
-> surfaces, walk-forward validation and a read-only Alpaca PnL view.
-> See **[DEPLOYMENT.md](DEPLOYMENT.md)** (backend → Render, frontend → Vercel).
-> The Streamlit app still works as before.
+## 🖥️ Web Terminal (v2)
+
+The engine ships with a decoupled web stack:
+
+- **`/api`** — FastAPI backend wrapping the `/src` quant modules. Async job
+  queue with WebSocket progress streaming (REST-polling fallback), REST
+  endpoints for backtests, strategy comparison, grid-search optimization,
+  walk-forward analysis, OHLCV data, and read-only Alpaca account/PnL.
+- **`/frontend`** — Next.js 14 + TypeScript + Tailwind terminal UI:
+  TradingView candlestick charts with trade markers, equity vs benchmark,
+  monthly return heatmaps, underwater drawdown curves, rolling Sharpe/Sortino,
+  Monte Carlo fan charts, optimizer sensitivity surfaces, and a live Alpaca
+  panel. IBM Plex Mono, amber-on-black, built to feel like a desk terminal.
+
+**Deploy:** backend → Render (`Dockerfile.api`), frontend → Vercel
+(root dir `frontend`). Full guide in **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+The original Streamlit app (`/app`) still works and is untouched.
 
 ---
 
 ## 🎯 Highlights
 
-**Key Achievements:**
-- **High-Performance Backtesting Engine:** Engineered a vectorized, event-driven backtester processing millions of candles with sub-second latency using Parquet serialization and PyArrow.
-- **Statistical Rigor & Risk Management:** Implemented 15+ institutional-grade metrics (Sharpe, Sortino, Tail Ratio, Omega) alongside dynamic ATR stop-losses, trailing stops, and portfolio circuit breakers.
-- **Dynamic Walk-Forward Optimization:** Built a robust out-of-sample validation framework utilizing parallel grid search (`joblib`) to dynamically re-optimize parameters across rolling time windows, aggressively mitigating overfitting.
-- **Multi-Asset Portfolio Analysis:** Developed a multi-threaded portfolio backtesting mode with correlation heatmap and diversification scoring for true portfolio-level testing.
-- **Regime-Aware Signal Gating:** Designed an automated market regime detector (ADX/Volatility) that filters signals based on market conditions, ensuring strategies only deploy capital in compatible environments.
-- **Live Execution Gateway:** Integrated Alpaca API for paper/live trading, translating strategy signals into real broker orders with a sync-to-target position management pattern.
-
----
-
-## 🎯 Problem Statement
-
-Retail traders and quant enthusiasts need a way to **backtest trading strategies** before risking real capital. This platform provides a modular, end-to-end pipeline:
-
-1. **Fetch** → Real market data via Yahoo Finance with smart caching
-2. **Signal** → Generate buy/sell signals using 9 configurable strategies
-3. **Simulate** → Day-by-day backtesting with transaction costs and position sizing
-4. **Analyze** → 15+ performance metrics including Sharpe, Sortino, Alpha, VaR
-5. **Optimize** → Parallel grid search & walk-forward validation
-6. **Visualize** → Interactive dashboard with equity curves, drawdown charts, Monte Carlo simulations
-7. **Execute** → Paper/live trading via Alpaca broker integration
+- **Timeframe-Agnostic Engine (1m → 1D):** one event loop for daily and intraday bars — signals execute on the *next bar's open*, risk resets are per session, metrics annualize by inferred bar frequency (√252 is not blindly applied to minute data), and intraday-only strategies can force square-off at each session close.
+- **Execution Realism:** configurable bid-ask spread, three slippage models (fixed bps, volatility-scaled, square-root volume impact), max-participation liquidity caps with partial fills, and Reg-T style short margin. Every result carries an explicit `assumptions` block — backtests are honest about what they simulate.
+- **Correct Intrabar Risk:** ATR stops trigger on the bar's high/low (not just the open), gap-through-stops fill at the open, and trailing stops update only *after* the same bar's stop check — no same-bar look-ahead.
+- **Validation That Fights Overfitting:** walk-forward with strict per-window train→optimize→freeze→test isolation and embargo gaps, in-sample vs out-of-sample Sharpe degradation reporting, block-bootstrap Monte Carlo (preserves volatility clustering), parameter-plateau stability verdicts, and composite robustness ranking that discounts low trade counts.
+- **Multi-Year Intraday Data:** Yahoo Finance for daily bars; **Alpaca Market Data** for years of minute bars on US equities (auto-routing when the requested range exceeds Yahoo's limits), with session-aware resampling (bars anchor to 09:15/09:30 session opens, never midnight) and Parquet caching.
+- **Scale:** the simulation loop runs on pre-extracted numpy arrays — **50,000 minute-bars with ATR stops simulate in ≈0.4s**; parallel grid search via joblib.
+- **Regime-Aware Signal Gating:** automated ADX/volatility regime detector that filters signals to compatible market conditions.
 
 ---
 
@@ -54,39 +52,38 @@ Retail traders and quant enthusiasts need a way to **backtest trading strategies
 
 ```mermaid
 flowchart TD
-    subgraph App ["🖥️ Streamlit Dashboard (app/)"]
+    subgraph FE ["🖥️ Next.js Terminal (frontend/) — Vercel"]
         direction LR
-        Sidebar ~~~ Charts ~~~ UI_Metrics["Metrics"] ~~~ TradeLog["Trade Log"]
+        Charts["TradingView Charts"] ~~~ Studio["Strategy Studio"] ~~~ Arena["Compare Arena"] ~~~ Live["Alpaca PnL"]
     end
 
-    subgraph Execution ["🔗 Execution Gateway"]
+    subgraph API ["🔌 FastAPI (api/) — Render"]
         direction LR
-        Alpaca["Alpaca Broker"] ~~~ Gateway["Order Sync"]
+        Routes["REST Routes"] ~~~ Jobs["Job Queue + WS Progress"] ~~~ Registry["Strategy Registry"]
     end
 
-    subgraph Analytics ["📊 Analytics Engine (analytics/)"]
+    subgraph Analytics ["📊 Analytics (src/analytics/)"]
         direction LR
-        MetricsMod["Metrics Module"] ~~~ RiskMgr["Risk Manager"] ~~~ MonteCarlo["Monte Carlo"] ~~~ Optimizer["Parallel Optimizer"]
+        MetricsMod["Metrics (TF-aware)"] ~~~ WF["Walk-Forward + Embargo"] ~~~ MC["Monte Carlo (block)"] ~~~ Opt["Parallel Optimizer"]
     end
 
-    subgraph Backtest ["⚙️ Backtester Engine (backtester/)"]
+    subgraph Backtest ["⚙️ Backtester (src/backtester/)"]
         direction LR
-        Engine["Engine (Loop)"] ~~~ Portfolio["Portfolio Tracker"] ~~~ Orders["Order Manager"] ~~~ Sizing["Position Sizing"]
+        Engine["Engine (numpy loop)"] ~~~ Exec["Execution Model"] ~~~ Risk["Intrabar Risk Controls"] ~~~ Portfolio["Portfolio"]
     end
 
-    subgraph Strategies ["🧠 Strategy Library (strategies/)"]
+    subgraph Strategies ["🧠 Strategies (src/strategies/)"]
         direction LR
-        SMA["SMA Crossover"] ~~~ RSI["RSI Reversion"] ~~~ BB["Bollinger Bands"] ~~~ MACD["MACD"]
-        MF["Multi-Factor"] ~~~ MoMR["Momentum+MR"] ~~~ VWAP["VWAP"] ~~~ Custom["Custom Builder"]
+        SMA["SMA"] ~~~ RSI["RSI"] ~~~ BB["Bollinger"] ~~~ MACD["MACD"] ~~~ Custom["Custom Builder"]
     end
 
-    subgraph Data ["💾 Data Layer (data/)"]
+    subgraph Data ["💾 Data (src/data/)"]
         direction LR
-        YF["yFinance Fetcher"] ~~~ DB[("SQLite Database")] ~~~ Cache["Cache Manager"] ~~~ Validator["Validator"]
+        YF["Yahoo Fetcher"] ~~~ ALP["Alpaca Fetcher"] ~~~ RS["Session Resampler"] ~~~ Cache["SQLite + Parquet Cache"]
     end
 
-    App --> Execution
-    App --> Analytics
+    FE -->|REST + WebSocket| API
+    API --> Analytics
     Analytics --> Backtest
     Backtest --> Strategies
     Backtest --> Data
@@ -98,136 +95,96 @@ flowchart TD
 
 | Feature | Description |
 |---------|-------------|
+| **Timeframes** | `1m / 5m / 15m / 30m / 1h / 1d` on every endpoint; session-aware resampling; intraday square-off; per-session circuit breaker |
 | **9 Trading Strategies** | SMA Crossover, RSI Reversion, Bollinger Bands, MACD, Multi-Factor, Momentum+MR, VWAP Reversion, Buy & Hold, Custom Builder |
-| **Custom Strategy Builder** | Define custom indicators and signal logic using pandas expressions directly in the UI |
-| **Look-Ahead Bias Prevention** | `signal.shift(1)` ensures trades execute on T+1, not T |
-| **Smart Data Caching** | SQLite database with intelligent gap detection — only fetches missing date ranges |
-| **Transaction Costs** | Configurable commission (0.1%) and slippage (0.05%) applied to every trade |
-| **Position Sizing** | Fixed capital %, fixed shares, and Kelly Criterion methods |
-| **15+ Performance Metrics** | CAGR, Sharpe, Sortino, Calmar, Max DD, Win Rate, Profit Factor, VaR, CVaR, Alpha, Beta |
-| **Walk-Forward Analysis** | Rolling window out-of-sample testing with dynamic optimization to detect overfitting |
-| **Monte Carlo Simulation** | 1000 bootstrap paths for probabilistic risk assessment with stress testing |
-| **Parallel Optimization** | Multi-core grid search using joblib to find optimal strategy parameters |
-| **Multi-Asset Portfolio** | Backtest across multiple tickers with correlation heatmap and diversification scoring |
-| **Regime Detection** | Automated market regime identification (ADX/Volatility) with signal gating |
-| **Live Execution** | Alpaca paper/live trading integration with sync-to-target position management |
-| **PDF Reports** | Professional 1-page PDF tear sheets with embedded equity curve and KPI table |
-| **Docker Deployment** | One-command deployment with `docker-compose up` |
-| **Interactive Dashboard** | Streamlit UI with Plotly charts, company name search, and benchmark comparison |
-| **Comprehensive Tests** | 55 unit tests covering all modules with deterministic fixtures |
+| **Custom Strategy Builder** | Indicators + pandas-expression buy/sell rules, from the UI |
+| **Look-Ahead Bias Prevention** | `signal.shift(1)` (bar T signal → bar T+1 open fill) + trailing-stop ordering that can't peek at the same bar |
+| **Intrabar Stop Losses** | ATR stops on high/low with gap-through-at-open fills; conservative same-bar policy |
+| **Execution Model** | Bid-ask spread, fixed / volatility / volume-impact slippage, participation caps → partial fills, short margin (`short_margin_pct`) |
+| **Data Sources** | Yahoo (daily, short intraday) + **Alpaca** (years of US minute bars, adjusted, session-filtered) with `auto` routing |
+| **15+ Metrics (TF-aware)** | CAGR, Sharpe, Sortino, Calmar, Max DD, Ulcer, Omega, Tail Ratio, Win Rate, Profit Factor — annualization inferred from bar spacing |
+| **Walk-Forward Validation** | Fixed-params or per-window train→optimize→freeze→test with embargo; train vs test Sharpe degradation report |
+| **Monte Carlo** | Block bootstrap (default, preserves serial correlation), IID bootstrap, parametric; seeded and reproducible; historical crash stress scenarios |
+| **Optimizer + Stability** | Parallel grid search, sensitivity heatmap, and a plateau/moderate/spike verdict from neighbor-cell performance |
+| **Composite Robustness Ranking** | Compare tab ranks by Sharpe+Calmar+DD+PF blend discounted for low trade counts — no more 4-trade flukes on top |
+| **Honest Warnings** | Low-sample confidence, liquidity-capped fills, open position at end, 0-trade diagnosis |
+| **Live Execution** | Alpaca paper/live integration; read-only account + positions endpoints for the terminal's LIVE tab |
+| **Reports** | QuantStats HTML tear sheets + 1-page PDF reports (Streamlit app) |
+| **89 Tests** | Synthetic-candle stop tests, resampler, square-off, execution model, block bootstrap, golden regressions |
 
 ---
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.10+
-- pip
-
-### Installation
+### Web stack (recommended)
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/RintuRifle/alpha-engine.git
-cd quant_research_platform
-
-# 2. Create virtual environment
-python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # macOS/Linux
-
-# 3. Install dependencies
+# Terminal 1 — API (http://localhost:8000, docs at /docs)
 pip install -r requirements.txt
-pip install -e .
+uvicorn api.main:app --reload --port 8000
 
-# 4. Configure environment
-copy .env.example .env       # Windows
-# cp .env.example .env       # macOS/Linux
+# Terminal 2 — Frontend (http://localhost:3000)
+cd frontend
+npm install
+cp .env.local.example .env.local     # points at http://localhost:8000
+npm run dev
+```
 
-# 5. Launch the dashboard
+Optional env for the API: `ALPACA_API_KEY` / `ALPACA_SECRET_KEY`
+(enables multi-year intraday data + the LIVE tab), `CORS_ORIGINS`.
+
+### Streamlit app (legacy, still works)
+
+```bash
 streamlit run app/streamlit_app.py
 ```
 
-### Docker Deployment
+### Docker
 
 ```bash
-# Build and run with Docker Compose
-docker-compose up -d --build
-
-# Access at http://localhost:8501
-
-# Stop the container
-docker-compose down
+docker build -f Dockerfile.api -t alpha-engine-api .   # FastAPI backend
+docker-compose up -d --build                            # Streamlit app
 ```
 
-### Available Commands
-
-```bash
-make run        # Launch Streamlit dashboard
-make test       # Run all unit tests
-make coverage   # Run tests with coverage report
-make lint       # Run flake8 linter
-make format     # Auto-format code with black
-make mypy       # Run static type checking
-make ingest     # Fetch market data into SQLite
-make clean      # Remove build artifacts
-```
+Production deployment (Render + Vercel): see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
 ---
 
 ## 📊 Strategies Implemented
 
-### 1. SMA Crossover
-Buy when short-term SMA crosses above long-term SMA. Classic trend-following.
-- **Parameters**: `short_window` (default: 50), `long_window` (default: 200)
-
-### 2. RSI Mean Reversion
-Buy when RSI drops below 30 (oversold), sell when RSI exceeds 70 (overbought).
-- **Parameters**: `window` (14), `oversold` (30), `overbought` (70)
-
-### 3. Bollinger Bands
-Buy when price drops below the lower band, sell when price exceeds the upper band.
-- **Parameters**: `window` (20), `num_std` (2.0)
-
-### 4. MACD Signal Crossover
-Buy when MACD line crosses above signal line, sell when it crosses below.
-- **Parameters**: `fast_period` (12), `slow_period` (26), `signal_period` (9)
-
-### 5. Multi-Factor
-Composite scoring system combining SMA trend, RSI, Bollinger position, MACD, and volume analysis. Signals fire when the score exceeds a configurable threshold.
-- **Parameters**: `min_score` (3), `rsi_window` (14), `bb_window` (20), `bb_std` (2.0)
-
-### 6. Momentum + Mean Reversion
-Hybrid strategy that combines trend-following (200 MA filter) with mean-reversion (RSI dips in uptrends).
-- **Parameters**: `rsi_window` (14), `entry_rsi` (40), `exit_rsi` (55), `trend_ma` (200)
-
-### 7. VWAP Reversion
-Uses Volume-Weighted Average Price as a fair-value anchor. Buy when price deviates below VWAP, sell when it rises above.
-- **Parameters**: `vwap_window` (20), `threshold` (0.02)
-
-### 8. Buy & Hold (Benchmark)
-Always buy, never sell. The baseline every strategy is compared against.
-
-### 9. Custom Builder
-Define your own strategy in the UI using pandas expressions and configurable indicators (SMA, EMA, RSI, MACD).
+| # | Strategy | Idea | Key Parameters |
+|---|----------|------|----------------|
+| 1 | **SMA Crossover** | Golden/death cross trend following | `short_window` 50, `long_window` 200 |
+| 2 | **RSI Reversion** | Buy oversold, sell overbought | `window` 14, `oversold` 30, `overbought` 70 |
+| 3 | **Bollinger Bands** | Mean reversion at volatility bands | `window` 20, `num_std` 2.0 |
+| 4 | **MACD** | Line/signal crossovers | 12 / 26 / 9 |
+| 5 | **Multi-Factor** | Confluence scoring across RSI/BB/MACD/trend/volume | `min_score` 4 |
+| 6 | **Momentum + MR** | Trend filter + RSI-dip entries | `trend_ma` 200, `entry_rsi` 40 |
+| 7 | **VWAP Reversion** | Reversion to rolling VWAP fair value | `vwap_window` 20, `threshold` 2% |
+| 8 | **Buy & Hold** | The benchmark everything must beat | — |
+| 9 | **Custom Builder** | Your indicators + pandas queries | `(close > SMA20) & (RSI14 < 40)` |
 
 ---
 
 ## 🧪 Testing
 
 ```bash
-# Run all tests
 pytest tests/ -v
-
-# Run with coverage
 pytest tests/ --cov=src --cov-report=term-missing -v
 ```
 
-**55 tests** across 4 test files covering:
-- Data validation (NaN handling, OHLCV sanity, volume checks)
-- Strategy signals (all strategies, synthetic data verification)
-- Backtester engine (equity curve, trades, transaction costs, position sizing)
-- Analytics (CAGR, Sharpe, Max DD, Win Rate with known values)
+**89 tests** across 7 files:
+
+- `test_data_ingestion.py` — validator, mocked fetcher
+- `test_strategies.py` — all strategies + look-ahead bias check
+- `test_backtester.py` — engine, costs, sizing
+- `test_analytics.py` — metric formulas vs known values
+- `test_intrabar_stops.py` — synthetic candles: intrabar stop, gap-through-stop, trailing ratchet, same-bar look-ahead guard, timeframe annualization
+- `test_phase2_timeframes.py` — session-aware resampling, intraday square-off, session detection
+- `test_execution_model.py` + `test_phase4_validation.py` — spread direction, volume impact scaling, partial fills, short margin, block bootstrap serial correlation, engine determinism + speed regression
+
+Golden-regression tests pin legacy behavior: default execution config
+reproduces the old flat-slippage results exactly.
 
 ---
 
@@ -235,114 +192,92 @@ pytest tests/ --cov=src --cov-report=term-missing -v
 
 ```
 quant_research_platform/
-├── config/
-│   └── config.yaml              # DB path, capital, commission, strategy defaults
+├── api/                          # FastAPI backend (v2)
+│   ├── main.py                   # Routes, request models, WebSocket progress
+│   ├── services.py               # JSON pipelines wrapping src/ modules
+│   ├── jobs.py                   # In-process background job queue
+│   └── registry.py               # Strategy registry + param schemas for the UI
+├── frontend/                     # Next.js terminal (v2) — deploy to Vercel
+│   ├── app/                      # Layout + single-page terminal
+│   ├── components/               # Charts, config panel, views (9 tabs)
+│   └── lib/                      # API client, formatters, chart theme
 ├── src/
 │   ├── data/
-│   │   ├── fetcher.py           # yfinance API + rate limiting + retry
-│   │   ├── database.py          # SQLAlchemy ORM, parameterized queries
-│   │   ├── validator.py         # NaN handling, OHLCV sanity checks
-│   │   └── cache_manager.py     # Smart caching with gap detection
-│   ├── strategies/
-│   │   ├── base_strategy.py     # Abstract base class
-│   │   ├── ma_crossover.py      # SMA/EMA crossover
-│   │   ├── rsi_reversion.py     # RSI mean reversion
-│   │   ├── bollinger_bands.py   # Bollinger band breakout
-│   │   ├── macd_strategy.py     # MACD signal crossover
-│   │   ├── multi_factor.py      # Composite scoring (7 factors)
-│   │   ├── momentum_mr.py       # Trend + mean reversion hybrid
-│   │   ├── vwap_strategy.py     # VWAP reversion strategy
-│   │   ├── custom_builder.py    # User-defined pandas.eval() strategy
-│   │   ├── buy_and_hold.py      # Benchmark strategy
-│   │   └── regime_detector.py   # Market regime classifier (ADX/Vol)
+│   │   ├── fetcher.py            # Yahoo fetcher (interval-aware, curl_cffi)
+│   │   ├── alpaca_data.py        # Alpaca bars — years of 1m US data
+│   │   ├── sessions.py           # Exchange session registry (NSE / US / crypto)
+│   │   ├── resampler.py          # Session-anchored OHLCV resampling
+│   │   ├── cache_manager.py      # SQLite (daily) + Parquet (intraday) caching
+│   │   ├── database.py           # SQLAlchemy ORM
+│   │   └── validator.py          # OHLCV sanity + NaN handling
+│   ├── strategies/               # 9 strategies + regime detector
 │   ├── backtester/
-│   │   ├── engine.py            # Day-by-day simulation (signal.shift(1)!)
-│   │   ├── portfolio.py         # Cash, positions, equity curve
-│   │   ├── order_manager.py     # BUY/SELL execution + cash check
-│   │   ├── transaction_costs.py # Commission + slippage
-│   │   └── position_sizing.py   # Fixed %, fixed shares, Kelly Criterion
+│   │   ├── engine.py             # Timeframe-agnostic numpy event loop
+│   │   ├── execution_model.py    # Spread / slippage / liquidity / margin
+│   │   ├── risk_controls.py      # Intrabar ATR stops, trailing, circuit breaker
+│   │   ├── order_manager.py      # Fills, cash checks, short mechanics
+│   │   ├── portfolio.py          # Cash, positions, equity curve
+│   │   └── position_sizing.py    # Fixed %, fixed shares, Kelly
 │   ├── analytics/
-│   │   ├── metrics.py           # Sharpe, Sortino, Calmar, CAGR, Win Rate
-│   │   ├── risk_manager.py      # VaR, CVaR, Alpha, Beta
-│   │   ├── benchmark.py         # SPY/NIFTY baseline comparison
-│   │   ├── walk_forward.py      # Rolling window out-of-sample testing
-│   │   ├── optimizer.py         # Serial grid search
-│   │   ├── parallel_optimizer.py # Multi-core parallel grid search
-│   │   ├── monte_carlo.py       # 1000-path equity simulation
-│   │   ├── report_generator.py  # QuantStats HTML tear sheets
-│   │   └── pdf_report.py        # PDF tear sheet generation
-│   ├── execution/
-│   │   ├── alpaca_broker.py     # Alpaca REST API wrapper
-│   │   └── gateway.py           # Signal-to-order translation engine
-│   └── utils/
-│       ├── logger.py            # RotatingFileHandler + console
-│       ├── helpers.py           # Config loader, formatters, utilities
-│       ├── exceptions.py        # Custom exceptions with context
-│       └── type_hints.py        # TypedDicts for type safety
-├── app/
-│   ├── streamlit_app.py         # Main dashboard entry point
-│   └── components/
-│       ├── sidebar.py           # Inputs, strategy params, company search
-│       ├── charts.py            # Plotly: equity, drawdown, histogram, MC
-│       ├── metrics_display.py   # 8 KPI cards with color coding
-│       ├── optimizer_ui.py      # Parallel optimization UI + heatmap
-│       ├── walk_forward_ui.py   # Walk-forward analysis UI
-│       ├── multi_asset_ui.py    # Multi-asset backtest + correlation matrix
-│       ├── strategy_builder_ui.py # Custom strategy definition UI
-│       ├── strategy_comparison.py # Side-by-side strategy ranking
-│       └── execution_ui.py      # Live execution gateway UI
-├── tests/
-│   ├── conftest.py              # Deterministic fixtures (seeded RNG)
-│   ├── test_data_ingestion.py   # 8 tests: validator + mocked fetcher
-│   ├── test_strategies.py       # 15 tests: all strategies + bias check
-│   ├── test_backtester.py       # 12 tests: engine, costs, sizing
-│   └── test_analytics.py        # 20 tests: metrics verification
-├── Dockerfile                   # Container definition
-├── docker-compose.yml           # One-command deployment
-├── .dockerignore                # Docker build exclusions
-├── .env.example                 # Template for secrets
-├── .gitignore                   # Excludes venv, data, logs, .env
-├── Makefile                     # make run | test | coverage | lint
-├── setup.py                     # Package installer
-├── requirements.txt             # Dependencies
-└── README.md                    # You are here
+│   │   ├── metrics.py            # TF-aware Sharpe/Sortino/… (15+ metrics)
+│   │   ├── walk_forward.py       # Rolling OOS + optimize_windows + embargo
+│   │   ├── monte_carlo.py        # Block/IID/parametric sims + stress scenarios
+│   │   ├── parallel_optimizer.py # joblib grid search + heatmap
+│   │   └── ...                   # benchmark, risk, reports (HTML/PDF)
+│   ├── execution/                # Alpaca broker + order gateway
+│   └── utils/                    # logger, config, exceptions, types
+├── app/                          # Streamlit dashboard (legacy, works)
+├── tests/                        # 89 tests, 7 files
+├── Dockerfile                    # Streamlit container
+├── Dockerfile.api                # FastAPI container (Render)
+├── DEPLOYMENT.md                 # Render + Vercel guide, API surface
+├── docker-compose.yml
+├── Makefile
+└── requirements.txt
 ```
-
----
-
-## 🛡️ Security
-
-- API keys and secrets are stored in `.env` (never committed)
-- `.env.example` is committed with placeholder values
-- Database queries use parameterized SQL (no SQL injection)
-- All user inputs are sanitized before use
 
 ---
 
 ## 🔧 Configuration
 
-All settings are centralized in `config/config.yaml`:
+Defaults live in `config/config.yaml` (capital, commission, slippage,
+position sizing). Per-run overrides come through the API/UI — including the
+full execution model:
 
-```yaml
-trading:
-  initial_capital: 10000.0
-  commission: 0.001   # 0.1% per trade
-  slippage: 0.0005    # 0.05% slippage
-
-position_sizing:
-  method: "fixed_capital"
-  allocation: 0.10    # 10% per trade
-
-data:
-  default_tickers: ["AAPL", "MSFT", "RELIANCE.NS", "INFY.NS", "TCS.NS"]
-  benchmark_ticker: "SPY"
+```jsonc
+// POST /api/v1/backtest/run (excerpt)
+{
+  "ticker": "AAPL",
+  "interval": "15m",              // 1m | 5m | 15m | 30m | 1h | 1d
+  "data_source": "auto",          // auto | yahoo | alpaca
+  "intraday_square_off": true,
+  "mc_method": "block",           // block | bootstrap | parametric
+  "execution": {
+    "spread_bps": 4,
+    "slippage_model": "volume",   // fixed | volatility | volume
+    "impact_bps": 10,
+    "max_participation": 0.05,    // partial fills above 5% of bar volume
+    "short_margin_pct": 1.5       // Reg-T style collateral
+  }
+}
 ```
+
+Environment (`.env` / Render dashboard): `ALPACA_API_KEY`,
+`ALPACA_SECRET_KEY`, `CORS_ORIGINS`.
+
+---
+
+## 🛡️ Security
+
+- Secrets via environment variables only (`.env` never committed)
+- Parameterized SQL throughout; user inputs validated by Pydantic models
+- CORS configurable per deployment
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file.
+MIT — see [LICENSE](LICENSE).
 
 ---
 

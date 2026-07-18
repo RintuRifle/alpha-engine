@@ -72,6 +72,7 @@ class MonteCarlo:
         initial_value: float = 1.0,
         stress_probability: float = 0.0,
         seed: int | None = None,
+        block_size: int = 20,
     ) -> pd.DataFrame:
         """
         Simulate equity paths from historical return distribution.
@@ -100,10 +101,22 @@ class MonteCarlo:
 
         sims = np.zeros((horizon, num_sims))
 
+        n_hist = len(returns_arr)
+
         for i in range(num_sims):
             if method == "bootstrap":
                 # Resample actual historical returns WITH replacement
+                # NOTE: destroys serial correlation (momentum/vol clustering).
                 sampled = np.random.choice(returns_arr, size=horizon, replace=True)
+            elif method == "block":
+                # Block bootstrap: sample contiguous chunks — preserves
+                # short-range serial correlation and volatility clustering.
+                L = max(2, min(block_size, n_hist))
+                chunks = []
+                while sum(len(c) for c in chunks) < horizon:
+                    start = np.random.randint(0, max(1, n_hist - L))
+                    chunks.append(returns_arr[start:start + L])
+                sampled = np.concatenate(chunks)[:horizon]
             else:
                 # Parametric: assume normal distribution
                 mu = returns_arr.mean()

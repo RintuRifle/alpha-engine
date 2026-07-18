@@ -315,16 +315,19 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
     progress(85, "Running Monte Carlo simulation...")
     port_returns = equity_df["total_equity"].pct_change().dropna()
     mc_payload = None
+    mc_method = str(req.get("mc_method", "block"))
     try:
         stress_prob = 0.10 if req.get("stress_test") else 0.0
         sim_df = MonteCarlo.simulate_paths(
             port_returns, num_sims=int(req.get("mc_sims", 500)),
+            method=mc_method,
             stress_probability=stress_prob,
             seed=req.get("mc_seed", 42),
         )
         if not sim_df.empty:
             qs = sim_df.quantile([0.05, 0.25, 0.50, 0.75, 0.95], axis=1).T
             mc_payload = {
+                "method": mc_method,
                 "p05": [_f(v) for v in qs[0.05]],
                 "p25": [_f(v) for v in qs[0.25]],
                 "p50": [_f(v) for v in qs[0.50]],
@@ -419,6 +422,32 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _robustness_score(m: dict) -> Optional[float]:
+    """
+    Composite 0-100 robustness score — Sharpe alone can be gamed by a
+    2-trade fluke. Blend of risk-adjusted return, drawdown, cost of being
+    wrong, and statistical confidence from the trade count.
+    """
+    def norm(v, lo, hi):
+        if v is None:
+            return 0.0
+        return max(0.0, min(1.0, (float(v) - lo) / (hi - lo)))
+
+    try:
+        sharpe = norm(m.get("sharpe_ratio"), 0.0, 2.0)
+        calmar = norm(m.get("calmar_ratio"), 0.0, 3.0)
+        dd = 1.0 - norm(abs(m.get("max_drawdown") or 0), 0.0, 0.5)
+        pf = norm(m.get("profit_factor"), 1.0, 2.0)
+        trades = m.get("total_trades") or 0
+        confidence = min(1.0, trades / 20.0)  # <20 round trips → discounted
+        score = 100 * (
+            0.35 * sharpe + 0.20 * calmar + 0.15 * dd + 0.10 * pf
+        ) + 100 * 0.20 * confidence * sharpe
+        return round(score, 1)
+    except Exception:
+        return None
+
+
 def run_compare_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
     """Run all standard strategies with default params, side by side."""
     ticker = req["ticker"].upper().strip()
@@ -451,6 +480,7 @@ def run_compare_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
                 "key": key,
                 "label": spec["label"],
                 "metrics": {k: _f(v) for k, v in metrics.items()},
+                "robustness": _robustness_score(metrics),
                 "final_equity": _f(equity_df["total_equity"].iloc[-1]),
                 "equity": _downsample(_equity_payload(equity_df, intraday), 300),
             })
@@ -458,9 +488,12 @@ def run_compare_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
             results.append({"key": key, "label": spec["label"], "error": str(e)})
 
     ok = [r for r in results if "error" not in r]
-    ok.sort(key=lambda r: (r["metrics"].get("sharpe_ratio") or -999), reverse=True)
+    # Rank by composite robustness, not raw Sharpe — a 1.5 Sharpe on 4 trades
+    # should not outrank a 1.2 Sharpe on 40 trades.
+    ok.sort(key=lambda r: (r.get("robustness") or -999), reverse=True)
     errs = [r for r in results if "error" in r]
-    return {"ticker": ticker, "capital": _f(capital), "results": ok + errs}
+    return {"ticker": ticker, "capital": _f(capital), "results": ok + errs,
+            "ranked_by": "robustness"}
 
 
 def run_optimize_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
@@ -503,12 +536,14 @@ def run_optimize_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
             "max_drawdown": _f(r.get("max_drawdown", 0.0)),
         })
     hm = out.get("heatmap_data")
+    stability = None
     if hm:
         hm = {
             "x_param": hm["x_param"], "y_param": hm["y_param"],
             "x_values": hm["x_values"], "y_values": hm["y_values"],
             "z_values": [[_f(v) for v in row] for row in hm["z_values"]],
         }
+        stability = _param_stability(hm, out["best_params"])
     return {
         "ticker": ticker,
         "strategy_label": spec["label"],
@@ -519,44 +554,144 @@ def run_optimize_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
         "elapsed_seconds": out.get("elapsed_seconds"),
         "top_results": clean_results,
         "heatmap": hm,
+        "stability": stability,
     }
 
 
+def _param_stability(hm: dict, best_params: dict) -> Optional[dict]:
+    """
+    Overfitting check: how well do the best cell's NEIGHBORS perform?
+    Flat plateau around the peak → robust zone. Isolated spike → likely
+    curve-fit to noise.
+    """
+    try:
+        y = hm["y_values"].index(best_params[hm["y_param"]])
+        x = hm["x_values"].index(best_params[hm["x_param"]])
+        z = hm["z_values"]
+        best = z[y][x]
+        if best is None or best <= 0:
+            return None
+        neighbors = []
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dy == 0 and dx == 0:
+                    continue
+                yy, xx = y + dy, x + dx
+                if 0 <= yy < len(z) and 0 <= xx < len(z[0]) and z[yy][xx] is not None:
+                    neighbors.append(z[yy][xx])
+        if not neighbors:
+            return None
+        ratio = (sum(neighbors) / len(neighbors)) / best
+        verdict = (
+            "plateau" if ratio >= 0.75
+            else "moderate" if ratio >= 0.5
+            else "spike"
+        )
+        return {"neighbor_ratio": _f(ratio), "verdict": verdict,
+                "n_neighbors": len(neighbors)}
+    except (ValueError, KeyError, IndexError, ZeroDivisionError):
+        return None
+
+
 def run_walkforward_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
-    """Rolling-window out-of-sample analysis."""
+    """
+    Rolling-window out-of-sample analysis.
+
+    Two modes:
+      fixed     → user's params frozen across every window (default).
+      optimized → per window: grid-search on TRAIN only → freeze best →
+                  test on unseen data. Train metrics never touch test bars,
+                  and an embargo gap guards the boundary.
+    """
     ticker = req["ticker"].upper().strip()
-    spec, _ = get_strategy(req["strategy"]), None
+    spec = get_strategy(req["strategy"])
+    optimize = bool(req.get("optimize", False))
+    embargo = int(req.get("embargo", 5))
 
     progress(5, f"Fetching data for {ticker}...")
     df = _fetch(ticker, req["start_date"], req["end_date"], req.get("interval", "1d"))
 
-    progress(20, "Running walk-forward windows...")
-    results = WalkForward.run_walk_forward(
-        df=df,
-        strategy_class=spec["class"],
-        strategy_params=req.get("params", {}),
-        backtest_engine_class=BacktestEngine,
-        ticker=ticker,
-        n_splits=int(req.get("n_splits", 5)),
-        train_ratio=float(req.get("train_ratio", 0.7)),
-        initial_capital=float(req.get("capital", 100000)),
-    )
     clean = []
-    for r in results:
-        clean.append({
-            "window": r["window"],
-            "train_size": r["train_size"],
-            "test_size": r["test_size"],
-            "test_return": _f(r["test_return"]),
-            "num_trades": r["num_trades"],
-            "error": r.get("error"),
-        })
-    returns = [r["test_return"] for r in clean if r["test_return"] is not None]
+    degradation = None
+
+    if optimize and spec["params"]:
+        progress(15, "Walk-forward optimization (train → freeze → test)...")
+        # Small default grid: first two params, {default-2·step, default, default+2·step}
+        grid: Dict[str, list] = {}
+        for p in spec["params"][:2]:
+            vals = sorted({
+                max(p["min"], p["default"] - 2 * p["step"]),
+                p["default"],
+                min(p["max"], p["default"] + 2 * p["step"]),
+            })
+            grid[p["name"]] = list(vals)
+        results = WalkForward.optimize_windows(
+            df=df,
+            strategy_class=spec["class"],
+            param_grid=grid,
+            backtest_engine_class=BacktestEngine,
+            ticker=ticker,
+            n_splits=int(req.get("n_splits", 5)),
+            train_ratio=float(req.get("train_ratio", 0.7)),
+            initial_capital=float(req.get("capital", 100000)),
+            embargo=embargo,
+            n_jobs=1,
+        )
+        train_sharpes, test_sharpes = [], []
+        for r in results:
+            clean.append({
+                "window": r.get("Window"),
+                "train_size": r.get("Train Size"),
+                "test_size": r.get("Test Size"),
+                "params": r.get("Optimal Params"),
+                "train_return": _f((r.get("Train Return (%)") or 0) / 100),
+                "test_return": _f((r.get("Test Return (%)") or 0) / 100),
+                "train_sharpe": _f(r.get("Train Sharpe")),
+                "test_sharpe": _f(r.get("Test Sharpe")),
+                "num_trades": r.get("Test Trades", 0),
+                "error": r.get("error"),
+            })
+            if r.get("Train Sharpe") is not None:
+                train_sharpes.append(r["Train Sharpe"])
+            if r.get("Test Sharpe") is not None:
+                test_sharpes.append(r["Test Sharpe"])
+        if train_sharpes and test_sharpes:
+            degradation = {
+                "avg_train_sharpe": _f(np.mean(train_sharpes)),
+                "avg_test_sharpe": _f(np.mean(test_sharpes)),
+            }
+    else:
+        progress(20, "Running walk-forward windows (fixed params)...")
+        results = WalkForward.run_walk_forward(
+            df=df,
+            strategy_class=spec["class"],
+            strategy_params=req.get("params", {}),
+            backtest_engine_class=BacktestEngine,
+            ticker=ticker,
+            n_splits=int(req.get("n_splits", 5)),
+            train_ratio=float(req.get("train_ratio", 0.7)),
+            initial_capital=float(req.get("capital", 100000)),
+            embargo=embargo,
+        )
+        for r in results:
+            clean.append({
+                "window": r["window"],
+                "train_size": r["train_size"],
+                "test_size": r["test_size"],
+                "test_return": _f(r["test_return"]),
+                "num_trades": r["num_trades"],
+                "error": r.get("error"),
+            })
+
+    returns = [r["test_return"] for r in clean if r.get("test_return") is not None]
     positive = sum(1 for r in returns if r > 0)
     return {
         "ticker": ticker,
         "strategy_label": spec["label"],
+        "mode": "optimized" if optimize and spec["params"] else "fixed",
+        "embargo": embargo,
         "windows": clean,
+        "degradation": degradation,
         "summary": {
             "avg_return": _f(np.mean(returns)) if returns else None,
             "consistency": _f(positive / len(returns)) if returns else None,

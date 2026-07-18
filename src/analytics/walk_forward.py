@@ -124,9 +124,13 @@ class WalkForward:
         n_splits: int = 5,
         train_ratio: float = 0.7,
         initial_capital: float = 10000.0,
+        embargo: int = 0,
     ) -> List[dict]:
         """
         Run a full walk-forward analysis.
+
+        embargo: drop the first N test bars after the train/test boundary so
+        signals warmed up on train data can't leak into the measured window.
 
         For each rolling window:
         1. Generate signals on the test data using the strategy
@@ -150,6 +154,8 @@ class WalkForward:
         results = []
 
         for i, (train_df, test_df) in enumerate(windows):
+            if embargo > 0 and len(test_df) > embargo + 5:
+                test_df = test_df.iloc[embargo:]
             try:
                 # Create strategy
                 strategy = strategy_class(**strategy_params)
@@ -216,6 +222,8 @@ class WalkForward:
         train_ratio: float = 0.7,
         initial_capital: float = 10000.0,
         metric: str = "sharpe_ratio",
+        embargo: int = 0,
+        n_jobs: int = 1,
     ) -> List[dict]:
         """
         Run a walk-forward optimization.
@@ -231,8 +239,10 @@ class WalkForward:
         results = []
 
         for i, (train_df, test_df) in enumerate(windows):
+            if embargo > 0 and len(test_df) > embargo + 5:
+                test_df = test_df.iloc[embargo:]
             try:
-                # 1. Optimize on Train Data
+                # 1. Optimize on Train Data ONLY (strict isolation)
                 logger.info(f"Optimizing Window {i+1}/{n_splits} on Train Data...")
                 opt_result = ParallelOptimizer.grid_search(
                     strategy_name=strategy_class.__name__,
@@ -241,7 +251,7 @@ class WalkForward:
                     ticker=ticker,
                     initial_capital=initial_capital,
                     metric=metric,
-                    n_jobs=-1,
+                    n_jobs=n_jobs,
                 )
                 
                 if not opt_result or not opt_result.get("best_params"):

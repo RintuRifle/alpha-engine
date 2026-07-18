@@ -84,6 +84,7 @@ class BacktestRequest(BaseModel):
     stress_test: bool = False
     mc_sims: int = 500
     mc_seed: int = 42
+    mc_method: str = "block"  # block | bootstrap | parametric
 
 
 class CompareRequest(BaseModel):
@@ -117,6 +118,8 @@ class WalkForwardRequest(BaseModel):
     n_splits: int = 5
     train_ratio: float = 0.7
     capital: float = 100000
+    optimize: bool = False   # per-window train→optimize→freeze→test
+    embargo: int = 5         # bars dropped after each train/test boundary
 
 
 # ──────────────────────────── meta ────────────────────────────

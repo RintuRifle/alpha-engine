@@ -191,20 +191,43 @@ class BacktestEngine:
         prev_equity = self.portfolio.initial_capital
         prev_session = None
 
+        # ── Scale: pre-extract numpy arrays — iterrows costs ~50µs/row,
+        # which murders minute-data × optimizer workloads. Same logic,
+        # same event ordering, plain array indexing.
+        n_bars = len(self.data)
+        cols = self.data.columns
+        _dates = self.data["date"].to_numpy()
+        _opens = self.data["open"].to_numpy(dtype=float)
+        _highs = self.data["high"].to_numpy(dtype=float)
+        _lows = self.data["low"].to_numpy(dtype=float)
+        _closes = self.data["close"].to_numpy(dtype=float)
+        _vols = (
+            self.data["volume"].to_numpy(dtype=float)
+            if "volume" in cols else np.zeros(n_bars)
+        )
+        _signals = self.data["trade_signal"].to_numpy()
+        _atr = atr_series.to_numpy(dtype=float) if atr_series is not None else None
+        _sessions = session_ids.to_numpy()
+
         # Bar-by-bar simulation (daily or intraday)
-        for idx, row in self.data.iterrows():
+        for idx in range(n_bars):
             # New session → reset the per-session circuit breaker
-            bar_session = session_ids.iloc[idx]
+            bar_session = _sessions[idx]
             if prev_session is not None and bar_session != prev_session:
                 self.risk.reset_daily()
             prev_session = bar_session
-            date = row["date"]
-            open_price = row["open"]
-            close_price = row["close"]
-            signal = row["trade_signal"]
+
+            date = _dates[idx]
+            open_price = _opens[idx]
+            close_price = _closes[idx]
+            signal = _signals[idx]
+            row = {
+                "open": open_price, "high": _highs[idx], "low": _lows[idx],
+                "close": close_price, "volume": _vols[idx],
+            }
 
             current_position = self.portfolio.positions.get(self.ticker, 0)
-            current_atr = atr_series.iloc[idx] if atr_series is not None and idx < len(atr_series) else 0
+            current_atr = _atr[idx] if _atr is not None else 0
 
             # ── Risk Control: Circuit Breaker ──
             if self.use_stops and prev_equity > 0:
