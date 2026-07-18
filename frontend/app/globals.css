@@ -1,0 +1,167 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --font-mono: "IBM Plex Mono";
+  --font-sans: "IBM Plex Sans";
+}
+
+html,
+body {
+  background: #07090c;
+  color: #d7e0ea;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* hairline scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #22304a transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #22304a;
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* subtle scanline / grain atmosphere over the whole terminal */
+.terminal-atmosphere::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.012) 0px,
+    rgba(255, 255, 255, 0.012) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+.terminal-atmosphere::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 51;
+  background:
+    radial-gradient(1200px 500px at 75% -10%, rgba(247, 166, 0, 0.045), transparent 60%),
+    radial-gradient(900px 600px at 0% 110%, rgba(34, 211, 238, 0.035), transparent 60%);
+}
+
+.panel {
+  @apply bg-panel border border-line rounded-sm;
+}
+
+.microlabel {
+  @apply text-micro uppercase tracking-[0.14em] text-muted font-mono;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #0e141b 25%, #16202c 50%, #0e141b 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2px;
+  background: #22304a;
+  border-radius: 1px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 1px;
+  background: #f7a600;
+  border: 1px solid #07090c;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.25) rotate(45deg);
+  box-shadow: 0 0 8px rgba(247, 166, 0, 0.7);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 1px;
+  background: #f7a600;
+  border: 1px solid #07090c;
+  cursor: pointer;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="date"],
+select,
+textarea {
+  @apply bg-panel2 border border-line rounded-sm px-2 py-1.5 text-xs font-mono text-text w-full;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: rgba(247, 166, 0, 0.55);
+  box-shadow: 0 0 0 1px rgba(247, 166, 0, 0.18);
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.6);
+}
+
+.btn {
+  @apply font-mono text-xxs uppercase tracking-[0.12em] px-3 py-2 rounded-sm border transition-all duration-150 select-none;
+}
+.btn-primary {
+  @apply btn bg-amber text-black border-amber font-semibold;
+}
+.btn-primary:hover {
+  box-shadow: 0 0 16px rgba(247, 166, 0, 0.45);
+}
+.btn-primary:disabled {
+  @apply opacity-40 cursor-not-allowed;
+  box-shadow: none;
+}
+.btn-ghost {
+  @apply btn bg-transparent text-muted border-line;
+}
+.btn-ghost:hover {
+  @apply text-text border-dim;
+}
+
+.tab-btn {
+  @apply font-mono text-xxs uppercase tracking-[0.14em] px-3.5 py-2.5 text-muted border-b-2 border-transparent whitespace-nowrap transition-colors duration-150;
+}
+.tab-btn:hover {
+  @apply text-text;
+}
+.tab-btn.active {
+  @apply text-amber border-amber;
+}
+
+table.term {
+  @apply w-full font-mono text-xxs;
+}
+table.term th {
+  @apply microlabel text-left px-2.5 py-2 border-b border-line sticky top-0 bg-panel;
+}
+table.term td {
+  @apply px-2.5 py-1.5 border-b border-line/60 whitespace-nowrap;
+}
+table.term tr:hover td {
+  background: rgba(247, 166, 0, 0.03);
+}

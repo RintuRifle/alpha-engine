@@ -24,6 +24,11 @@ class AlpacaBroker:
                 base_url=base_url,
                 api_version='v2'
             )
+            
+            # Patch requests session to bypass TLS fingerprinting blocks by Alpaca/Cloudflare
+            from curl_cffi import requests as cffi_requests
+            self.api._session = cffi_requests.Session(impersonate="chrome")
+            
             self.account = self.api.get_account()
             logger.info(f"Connected to Alpaca. Status: {self.account.status}")
         except Exception as e:

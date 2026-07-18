@@ -15,6 +15,15 @@
 
 ---
 
+> **🆕 v2 — Web Trading Terminal:** the engine now ships with a FastAPI backend (`/api`) and a
+> Next.js + TradingView terminal frontend (`/frontend`) — dark Bloomberg-style UI with
+> candlestick execution charts, monthly heatmaps, Monte Carlo fans, optimizer sensitivity
+> surfaces, walk-forward validation and a read-only Alpaca PnL view.
+> See **[DEPLOYMENT.md](DEPLOYMENT.md)** (backend → Render, frontend → Vercel).
+> The Streamlit app still works as before.
+
+---
+
 ## 🎯 Highlights
 
 **Key Achievements:**
