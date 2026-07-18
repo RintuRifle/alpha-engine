@@ -49,12 +49,25 @@ class CustomSpec(BaseModel):
     sell_query: str = ""
 
 
+class ExecutionConfig(BaseModel):
+    """Execution realism knobs — all optional, defaults = legacy behavior."""
+    spread_bps: float = 0.0            # full bid-ask spread
+    slippage_model: str = "fixed"      # fixed | volatility | volume
+    slippage_bps: float = 5.0          # for 'fixed'
+    vol_coef: float = 0.1              # for 'volatility' (fraction of bar range)
+    impact_bps: float = 10.0           # for 'volume' (sqrt impact at 100% part.)
+    max_participation: float = 1.0     # max fraction of bar volume per order
+    short_margin_pct: float = 1.0      # cash collateral for shorts
+
+
 class BacktestRequest(BaseModel):
     ticker: str = Field(..., min_length=1, max_length=20)
     start_date: str
     end_date: str
     interval: str = "1d"  # 1m | 2m | 5m | 15m | 30m | 1h | 1d
     intraday_square_off: bool = False
+    data_source: str = "auto"  # auto | yahoo | alpaca
+    execution: Optional[ExecutionConfig] = None
     strategy: str
     params: Dict[str, Any] = {}
     custom: Optional[CustomSpec] = None

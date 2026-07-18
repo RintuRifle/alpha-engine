@@ -38,30 +38,68 @@ class CacheManager:
         self.validator = DataValidator()
 
     def get_data(
-        self, ticker: str, start_date: str, end_date: str, interval: str = "1d"
+        self,
+        ticker: str,
+        start_date: str,
+        end_date: str,
+        interval: str = "1d",
+        source: str = "auto",
     ) -> pd.DataFrame:
         """
         Get OHLCV data for a ticker at any interval, using cache when possible.
-        Intraday intervals route to the Parquet cache; '1d' uses SQLite.
+
+        source:
+            'auto'   → yahoo, but switch to Alpaca for intraday ranges beyond
+                       Yahoo's history limits (when keys are configured).
+            'yahoo'  → force Yahoo Finance.
+            'alpaca' → force Alpaca Market Data (US equities, needs keys).
         """
-        if interval != "1d":
-            return self._get_intraday(ticker, start_date, end_date, interval)
+        source = (source or "auto").lower()
+        if source == "auto":
+            source = self._resolve_source(ticker, start_date, interval)
+        if interval != "1d" or source == "alpaca":
+            return self._get_intraday(ticker, start_date, end_date, interval, source)
         return self._get_daily(ticker, start_date, end_date)
 
+    @staticmethod
+    def _resolve_source(ticker: str, start_date: str, interval: str) -> str:
+        """Pick yahoo vs alpaca automatically."""
+        from src.data.fetcher import INTERVAL_MAX_DAYS
+        from src.data.alpaca_data import alpaca_keys_present
+
+        if interval == "1d":
+            return "yahoo"
+        limit = INTERVAL_MAX_DAYS.get(interval)
+        days_back = (datetime.now() - datetime.strptime(start_date, "%Y-%m-%d")).days
+        beyond_yahoo = limit is not None and days_back > limit
+        us_ticker = "." not in ticker  # Alpaca serves US equities only
+        if beyond_yahoo and us_ticker and alpaca_keys_present():
+            logger.info(
+                f"Auto data source: alpaca ({days_back}d back exceeds yahoo's {limit}d {interval} limit)"
+            )
+            return "alpaca"
+        return "yahoo"
+
     def _get_intraday(
-        self, ticker: str, start_date: str, end_date: str, interval: str
+        self, ticker: str, start_date: str, end_date: str, interval: str,
+        source: str = "yahoo",
     ) -> pd.DataFrame:
         """Fetch-fresh-first intraday flow with Parquet fallback cache."""
         os.makedirs(INTRADAY_CACHE_DIR, exist_ok=True)
+        suffix = "_alpaca" if source == "alpaca" else ""
         cache_path = os.path.join(
-            INTRADAY_CACHE_DIR, f"{ticker.replace('/', '_')}_{interval}.parquet"
+            INTRADAY_CACHE_DIR, f"{ticker.replace('/', '_')}_{interval}{suffix}.parquet"
         )
 
         df = None
         try:
-            df = self.fetcher.fetch_ohlcv(ticker, start_date, end_date, interval)
+            if source == "alpaca":
+                from src.data.alpaca_data import AlpacaDataFetcher
+                df = AlpacaDataFetcher().fetch_ohlcv(ticker, start_date, end_date, interval)
+            else:
+                df = self.fetcher.fetch_ohlcv(ticker, start_date, end_date, interval)
         except Exception as e:
-            logger.warning(f"Intraday fetch failed for {ticker}@{interval}: {e}")
+            logger.warning(f"Intraday fetch failed for {ticker}@{interval} ({source}): {e}")
 
         if df is not None and not df.empty:
             # Merge with existing cache (dedupe on timestamp, keep newest)

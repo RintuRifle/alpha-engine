@@ -25,11 +25,17 @@ class OrderManager:
         self.tc = transaction_costs
         self.allow_short = allow_short
 
-    def execute_trade(self, date, ticker: str, action: str, quantity: float, raw_price: float):
+    def execute_trade(self, date, ticker: str, action: str, quantity: float,
+                      raw_price: float, bar: dict | None = None):
         if quantity <= 0:
             return
 
-        exec_price = self.tc.apply_costs(raw_price, action)
+        # ExecutionModel gets bar context (spread/slippage models);
+        # plain TransactionCosts keeps the legacy flat adjustment.
+        if hasattr(self.tc, "effective_price"):
+            exec_price = self.tc.effective_price(raw_price, action, bar, quantity)
+        else:
+            exec_price = self.tc.apply_costs(raw_price, action)
         current_qty = self.portfolio.positions.get(ticker, 0)
 
         if action == 'BUY':
@@ -107,9 +113,10 @@ class OrderManager:
                 commission = self.tc.calculate_commission(notional)
                 net_proceeds = notional - commission
 
-                # Require enough cash to cover potential loss (margin = 100% of notional)
-                if notional > self.portfolio.cash:
-                    quantity = int(self.portfolio.cash // (exec_price * (1 + self.tc.commission_pct)))
+                # Require cash collateral = short_margin_pct × notional
+                margin_pct = getattr(self.tc, "short_margin_pct", 1.0)
+                if notional * margin_pct > self.portfolio.cash:
+                    quantity = int(self.portfolio.cash // (exec_price * margin_pct * (1 + self.tc.commission_pct)))
                     if quantity <= 0:
                         return
                     notional = quantity * exec_price

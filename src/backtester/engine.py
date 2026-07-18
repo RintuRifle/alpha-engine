@@ -19,6 +19,7 @@ from src.utils.helpers import load_config
 from src.utils.logger import get_logger
 from .portfolio import Portfolio
 from .transaction_costs import TransactionCosts
+from .execution_model import ExecutionModel
 from .position_sizing import PositionSizer
 from .order_manager import OrderManager
 from .risk_controls import RiskControls
@@ -61,6 +62,7 @@ class BacktestEngine:
         use_circuit_breaker: bool = False,
         circuit_breaker_pct: float = -0.03,
         intraday_square_off: bool = False,
+        execution: dict | None = None,
     ):
         """
         Args:
@@ -106,7 +108,26 @@ class BacktestEngine:
         slip = slippage if slippage is not None else trading.get("slippage", 0.0005)
 
         self.portfolio = Portfolio(capital)
-        self.tc = TransactionCosts(comm, slip)
+        # Execution realism: explicit config → full model; otherwise legacy
+        # flat slippage reproduced through the same ExecutionModel interface.
+        if execution:
+            self.exec_model = ExecutionModel(
+                commission_pct=comm,
+                spread_bps=float(execution.get("spread_bps", 0.0)),
+                slippage_model=str(execution.get("slippage_model", "fixed")),
+                slippage_bps=float(execution.get("slippage_bps", slip * 1e4)),
+                vol_coef=float(execution.get("vol_coef", 0.1)),
+                impact_bps=float(execution.get("impact_bps", 10.0)),
+                max_participation=float(execution.get("max_participation", 1.0)),
+                short_margin_pct=float(execution.get("short_margin_pct", 1.0)),
+            )
+        else:
+            self.exec_model = ExecutionModel(
+                commission_pct=comm, slippage_model="fixed",
+                slippage_bps=slip * 1e4,
+            )
+        self.tc = self.exec_model
+        self.capped_entries = 0
         self.order_manager = OrderManager(self.portfolio, self.tc, allow_short=allow_short)
 
         # Risk controls
@@ -206,11 +227,11 @@ class BacktestEngine:
                 if stop_triggered:
                     if current_position > 0:
                         self.order_manager.execute_trade(
-                            date, self.ticker, "SELL", current_position, stop_fill
+                            date, self.ticker, "SELL", current_position, stop_fill, bar=row
                         )
                     elif current_position < 0:
                         self.order_manager.execute_trade(
-                            date, self.ticker, "BUY", abs(current_position), stop_fill
+                            date, self.ticker, "BUY", abs(current_position), stop_fill, bar=row
                         )
                     self.risk.reset()
                     current_position = self.portfolio.positions.get(self.ticker, 0)
@@ -219,32 +240,38 @@ class BacktestEngine:
             if not stop_triggered:
                 if signal == 1 and current_position <= 0:
                     if current_position < 0:
-                        # Cover the short first
+                        # Cover the short first (exits always fill in full)
                         cover_qty = abs(current_position)
-                        self.order_manager.execute_trade(date, self.ticker, "BUY", cover_qty, open_price)
+                        self.order_manager.execute_trade(date, self.ticker, "BUY", cover_qty, open_price, bar=row)
                         self.risk.reset()
 
-                    # BUY signal — enter long position
+                    # BUY signal — enter long (liquidity-capped → partial fills)
                     qty = self.sizer.get_quantity(open_price, self.portfolio.cash)
+                    qty, capped = self.exec_model.cap_quantity(qty, row)
+                    if capped:
+                        self.capped_entries += 1
                     if qty > 0:
-                        self.order_manager.execute_trade(date, self.ticker, "BUY", qty, open_price)
+                        self.order_manager.execute_trade(date, self.ticker, "BUY", qty, open_price, bar=row)
                         if self.use_stops and current_atr > 0:
                             self.risk.on_entry(open_price, current_atr, "long")
 
                 elif signal == -1 and current_position >= 0:
                     if current_position > 0:
-                        # SELL signal — exit long position
+                        # SELL signal — exit long position (exits fill in full)
                         self.order_manager.execute_trade(
-                            date, self.ticker, "SELL", current_position, open_price
+                            date, self.ticker, "SELL", current_position, open_price, bar=row
                         )
                         self.risk.reset()
 
                     if self.allow_short and self.portfolio.positions.get(self.ticker, 0) == 0:
-                        # Open a short position
+                        # Open a short position (liquidity-capped)
                         qty = self.sizer.get_quantity(open_price, self.portfolio.cash)
+                        qty, capped = self.exec_model.cap_quantity(qty, row)
+                        if capped:
+                            self.capped_entries += 1
                         if qty > 0:
                             self.order_manager.execute_trade(
-                                date, self.ticker, "SELL", qty, open_price
+                                date, self.ticker, "SELL", qty, open_price, bar=row
                             )
                             if self.use_stops and current_atr > 0:
                                 self.risk.on_entry(open_price, current_atr, "short")
@@ -254,12 +281,12 @@ class BacktestEngine:
                 pos = self.portfolio.positions.get(self.ticker, 0)
                 if pos > 0:
                     self.order_manager.execute_trade(
-                        date, self.ticker, "SELL", pos, close_price
+                        date, self.ticker, "SELL", pos, close_price, bar=row
                     )
                     self.risk.reset()
                 elif pos < 0:
                     self.order_manager.execute_trade(
-                        date, self.ticker, "BUY", abs(pos), close_price
+                        date, self.ticker, "BUY", abs(pos), close_price, bar=row
                     )
                     self.risk.reset()
 

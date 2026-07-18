@@ -1,8 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import type { StrategySchema, BacktestConfig } from "@/lib/api";
+import type { StrategySchema, BacktestConfig, ExecutionConfig } from "@/lib/api";
 import { CustomBuilder, type CustomSpec } from "./CustomBuilder";
+
+export const DEFAULT_EXECUTION: ExecutionConfig = {
+  spread_bps: 0,
+  slippage_model: "fixed",
+  slippage_bps: 5,
+  vol_coef: 0.1,
+  impact_bps: 10,
+  max_participation: 1.0,
+  short_margin_pct: 1.0,
+};
 
 export interface ConfigState {
   ticker: string;
@@ -10,6 +20,8 @@ export interface ConfigState {
   end_date: string;
   interval: string;
   intraday_square_off: boolean;
+  data_source: string;
+  execution: ExecutionConfig;
   capital: number;
   allocation: number;
   benchmark: string;
@@ -56,6 +68,8 @@ export function toBacktestRequest(c: ConfigState): BacktestConfig {
     end_date: c.end_date,
     interval: c.interval,
     intraday_square_off: c.intraday_square_off,
+    data_source: c.data_source,
+    execution: c.execution,
     strategy: c.strategy,
     params: c.params,
     custom: c.strategy === "custom" ? c.custom : undefined,
@@ -121,10 +135,17 @@ export function ConfigPanel({
   onCompare: () => void;
 }) {
   const [showRisk, setShowRisk] = useState(false);
+  const [showExec, setShowExec] = useState(false);
   const strat = strategies.find((s) => s.key === config.strategy);
 
   const set = <K extends keyof ConfigState>(k: K, v: ConfigState[K]) =>
     setConfig((c) => ({ ...c, [k]: v }));
+
+  const setExec = <K extends keyof ConfigState["execution"]>(
+    k: K,
+    v: ConfigState["execution"][K]
+  ) =>
+    setConfig((c) => ({ ...c, execution: { ...c.execution, [k]: v } }));
 
   return (
     <aside className="w-[290px] shrink-0 border-r border-line bg-panel overflow-y-auto flex flex-col">
@@ -168,9 +189,30 @@ export function ConfigPanel({
           {config.interval !== "1d" && (
             <p className="text-micro text-dim mt-1 font-sans">
               Yahoo serves ~{INTERVAL_LIMITS[config.interval]}d of{" "}
-              {config.interval} history — start date auto-clamped.
+              {config.interval} history. Alpaca (US equities) serves years —
+              set data source below.
             </p>
           )}
+
+          {/* Data source */}
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <div>
+              <div className="microlabel mb-1">Data Source</div>
+              <select
+                value={config.data_source}
+                onChange={(e) => set("data_source", e.target.value)}
+              >
+                <option value="auto">Auto</option>
+                <option value="yahoo">Yahoo</option>
+                <option value="alpaca">Alpaca</option>
+              </select>
+            </div>
+            <div className="self-end">
+              <p className="text-micro text-dim font-sans leading-tight pb-1">
+                Auto: Alpaca for long intraday ranges (needs keys on backend)
+              </p>
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 gap-2 mt-2">
             <div>
@@ -275,6 +317,148 @@ export function ConfigPanel({
               value={config.custom}
               onChange={(custom) => setConfig((c) => ({ ...c, custom }))}
             />
+          )}
+        </div>
+
+        {/* Execution model */}
+        <div className="border-t border-line pt-3">
+          <button
+            className="microlabel w-full text-left flex justify-between items-center"
+            onClick={() => setShowExec((v) => !v)}
+          >
+            <span>Execution Model</span>
+            <span className="text-dim">{showExec ? "−" : "+"}</span>
+          </button>
+          {showExec && (
+            <div className="mt-2 space-y-2.5">
+              <div>
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="text-xxs text-muted">Bid-Ask Spread</span>
+                  <span className="text-xxs text-amber tabular-nums">
+                    {config.execution.spread_bps} bps
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={50}
+                  step={1}
+                  value={config.execution.spread_bps}
+                  onChange={(e) => setExec("spread_bps", Number(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <div className="microlabel mb-1">Slippage Model</div>
+                <select
+                  value={config.execution.slippage_model}
+                  onChange={(e) =>
+                    setExec(
+                      "slippage_model",
+                      e.target.value as ConfigState["execution"]["slippage_model"]
+                    )
+                  }
+                >
+                  <option value="fixed">Fixed (bps)</option>
+                  <option value="volatility">Volatility-scaled</option>
+                  <option value="volume">Volume impact (√)</option>
+                </select>
+              </div>
+
+              {config.execution.slippage_model === "fixed" && (
+                <div>
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-xxs text-muted">Slippage</span>
+                    <span className="text-xxs text-amber tabular-nums">
+                      {config.execution.slippage_bps} bps
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={50}
+                    step={1}
+                    value={config.execution.slippage_bps}
+                    onChange={(e) =>
+                      setExec("slippage_bps", Number(e.target.value))
+                    }
+                    className="w-full"
+                  />
+                </div>
+              )}
+              {config.execution.slippage_model === "volatility" && (
+                <div>
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-xxs text-muted">
+                      Bar-Range Fraction
+                    </span>
+                    <span className="text-xxs text-amber tabular-nums">
+                      {(config.execution.vol_coef * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.5}
+                    step={0.05}
+                    value={config.execution.vol_coef}
+                    onChange={(e) => setExec("vol_coef", Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              )}
+              {config.execution.slippage_model === "volume" && (
+                <div>
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-xxs text-muted">
+                      Impact @ 100% part.
+                    </span>
+                    <span className="text-xxs text-amber tabular-nums">
+                      {config.execution.impact_bps} bps
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={config.execution.impact_bps}
+                    onChange={(e) =>
+                      setExec("impact_bps", Number(e.target.value))
+                    }
+                    className="w-full"
+                  />
+                </div>
+              )}
+
+              <div>
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="text-xxs text-muted">
+                    Max Volume Participation
+                  </span>
+                  <span className="text-xxs text-amber tabular-nums">
+                    {config.execution.max_participation >= 1
+                      ? "∞"
+                      : `${(config.execution.max_participation * 100).toFixed(0)}%`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0.01}
+                  max={1}
+                  step={0.01}
+                  value={config.execution.max_participation}
+                  onChange={(e) =>
+                    setExec("max_participation", Number(e.target.value))
+                  }
+                  className="w-full"
+                />
+                <p className="text-micro text-dim font-sans">
+                  Orders above this % of bar volume get partially filled.
+                </p>
+              </div>
+            </div>
           )}
         </div>
 

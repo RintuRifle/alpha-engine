@@ -14,6 +14,7 @@ import { TopBar } from "@/components/TopBar";
 import {
   ConfigPanel,
   toBacktestRequest,
+  DEFAULT_EXECUTION,
   type ConfigState,
 } from "@/components/ConfigPanel";
 import { DEFAULT_CUSTOM } from "@/components/CustomBuilder";
@@ -53,6 +54,8 @@ const DEFAULT_CONFIG: ConfigState = {
   end_date: todayIso(),
   interval: "1d",
   intraday_square_off: false,
+  data_source: "auto",
+  execution: DEFAULT_EXECUTION,
   capital: 100000,
   allocation: 0.95,
   benchmark: "SPY",
@@ -214,6 +217,19 @@ export default function Terminal() {
                         </h2>
                       </div>
                       <MetricCards metrics={result.metrics} />
+                      {result.assumptions && (
+                        <p className="text-micro text-dim font-mono px-1">
+                          ASSUMPTIONS · {result.assumptions.account} · spread{" "}
+                          {result.assumptions.spread_bps}bps · slippage{" "}
+                          {result.assumptions.slippage_model} · participation ≤
+                          {Number(result.assumptions.max_participation) >= 1
+                            ? "∞"
+                            : `${(Number(result.assumptions.max_participation) * 100).toFixed(0)}%`}{" "}
+                          · data {result.assumptions.data_source}
+                          {Number(result.assumptions.capped_entries) > 0 &&
+                            ` · ${result.assumptions.capped_entries} capped fills`}
+                        </p>
+                      )}
                       <Panel title="Equity Curve vs Benchmark" delay={0.05}>
                         <EquityChart result={result} />
                       </Panel>

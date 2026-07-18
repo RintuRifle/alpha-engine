@@ -55,23 +55,32 @@ INTERVAL_LIMIT_DAYS = {
 }
 
 
-def _validate_interval(interval: str, start: str, end: str) -> Optional[str]:
+def _validate_interval(
+    interval: str, start: str, end: str, source: str = "auto"
+) -> Optional[str]:
     """Validate interval and return a warning string if Yahoo limits may apply.
-    No longer blocks the request — the fetcher's Alpaca fallback handles it."""
+    Non-blocking — the CacheManager's Alpaca routing/fallback handles long ranges."""
     if interval not in INTERVAL_LIMIT_DAYS:
         raise ValueError(
             f"Unknown interval '{interval}'. Valid: {list(INTERVAL_LIMIT_DAYS)}"
         )
     limit = INTERVAL_LIMIT_DAYS[interval]
-    if limit is not None:
-        days_back = (pd.Timestamp.now() - pd.Timestamp(start)).days
-        if days_back > limit:
-            return (
-                f"No intraday data for {{ticker}} @ {interval} "
-                f"({start} → {{end}}). Yahoo limits intraday history "
-                f"(1m≈7d, 5m/15m≈60d, 1h≈730d). "
-                f"[ticker={{ticker}}, source=yfinance]"
-            )
+    if limit is None or source == "alpaca":
+        return None
+    if source == "auto":
+        try:
+            from src.data.alpaca_data import alpaca_keys_present
+            if alpaca_keys_present():
+                return None  # auto-routes to Alpaca for long ranges
+        except Exception:
+            pass
+    days_back = (pd.Timestamp.now() - pd.Timestamp(start)).days
+    if days_back > limit:
+        return (
+            f"Requested {days_back}d of {interval} history but Yahoo serves "
+            f"~{limit}d (1m≈7d, 5m/15m≈60d, 1h≈730d). Configure Alpaca keys "
+            f"or shorten the range if the fetch comes back empty."
+        )
     return None
 
 
@@ -90,10 +99,12 @@ def _downsample(items: list, max_points: int = 400) -> list:
     return out
 
 
-def _fetch(ticker: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame:
-    _validate_interval(interval, start, end)  # warns but no longer blocks
+def _fetch(
+    ticker: str, start: str, end: str, interval: str = "1d", source: str = "auto"
+) -> pd.DataFrame:
+    _validate_interval(interval, start, end, source)  # warns but doesn't block
     cache = CacheManager()
-    df = cache.get_data(ticker, start, end, interval=interval)
+    df = cache.get_data(ticker, start, end, interval=interval, source=source)
     if df is None or df.empty:
         raise ValueError(
             f"No data returned for {ticker} ({start} → {end}, {interval})"
@@ -224,9 +235,10 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
     capital = float(req.get("capital", 100000))
     interval = req.get("interval", "1d")
     intraday = interval != "1d"
+    source = req.get("data_source", "auto")
 
     progress(5, f"Fetching {ticker} @ {interval}...")
-    df = _fetch(ticker, start, end, interval)
+    df = _fetch(ticker, start, end, interval, source)
 
     progress(15, "Detecting market regime...")
     regime_df = RegimeDetector().detect(df)
@@ -257,6 +269,7 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
         use_circuit_breaker=bool(req.get("use_circuit_breaker", False)),
         circuit_breaker_pct=float(req.get("circuit_breaker_pct", -0.03)),
         intraday_square_off=bool(req.get("intraday_square_off", False)) and intraday,
+        execution=req.get("execution") or None,
     )
     portfolio = engine.run()
     equity_df = portfolio.get_equity_df()
@@ -269,6 +282,13 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
                for k, v in metrics.items()}
     metrics["final_equity"] = _f(equity_df["total_equity"].iloc[-1])
     metrics["initial_capital"] = _f(capital)
+    # Cost breakdown — what execution realism actually cost you
+    metrics["total_commission"] = _f(
+        sum(t.get("commission", 0) or 0 for t in portfolio.trade_history)
+    )
+    metrics["total_slippage"] = _f(
+        sum(t.get("slippage", 0) or 0 for t in portfolio.trade_history)
+    )
 
     progress(70, f"Fetching benchmark ({req.get('benchmark', 'SPY')})...")
     benchmark_payload = None
@@ -363,6 +383,12 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
             f"Position still open at end of backtest ({open_pos:g} shares) — "
             f"marked-to-market at the last close, not liquidated."
         )
+    if getattr(engine, "capped_entries", 0) > 0:
+        warnings.append(
+            f"Liquidity cap hit on {engine.capped_entries} entr"
+            f"{'y' if engine.capped_entries == 1 else 'ies'} — orders were "
+            f"partially filled at max participation."
+        )
     warning = " • ".join(warnings) if warnings else None
 
     return {
@@ -385,6 +411,11 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
         "monte_carlo": mc_payload,
         "regimes": _regime_segments(regime_df, intraday),
         "warning": warning,
+        "assumptions": {
+            **engine.exec_model.assumptions(),
+            "data_source": source,
+            "capped_entries": getattr(engine, "capped_entries", 0),
+        },
     }
 
 

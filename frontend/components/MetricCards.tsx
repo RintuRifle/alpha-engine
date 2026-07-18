@@ -84,6 +84,16 @@ export function MetricCards({
       format: (v) => `${(v * 100).toFixed(2)}%`,
       colorize: true,
     },
+    {
+      label: "Commission Paid",
+      value: metrics.total_commission,
+      format: (v) => fmtMoney(v),
+    },
+    {
+      label: "Slippage + Spread",
+      value: metrics.total_slippage,
+      format: (v) => fmtMoney(v),
+    },
   ];
 
   return (

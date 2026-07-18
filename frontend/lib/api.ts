@@ -93,6 +93,17 @@ export interface BacktestResult {
   } | null;
   regimes: { time: BarTime; regime: string }[];
   warning: string | null;
+  assumptions?: Record<string, string | number | null>;
+}
+
+export interface ExecutionConfig {
+  spread_bps: number;
+  slippage_model: "fixed" | "volatility" | "volume";
+  slippage_bps: number;
+  vol_coef: number;
+  impact_bps: number;
+  max_participation: number;
+  short_margin_pct: number;
 }
 
 export interface CompareResult {
@@ -165,6 +176,8 @@ export interface BacktestConfig {
   end_date: string;
   interval: string;
   intraday_square_off: boolean;
+  data_source: string;
+  execution?: ExecutionConfig;
   strategy: string;
   params: Record<string, number>;
   custom?: {
