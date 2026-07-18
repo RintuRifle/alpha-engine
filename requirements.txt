@@ -80,3 +80,4 @@ alpaca-trade-api>=3.0.0
 joblib
 fpdf2
 fastapi
+wsproto
