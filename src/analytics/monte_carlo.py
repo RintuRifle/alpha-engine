@@ -71,6 +71,7 @@ class MonteCarlo:
         method: str = "bootstrap",
         initial_value: float = 1.0,
         stress_probability: float = 0.0,
+        seed: int | None = None,
     ) -> pd.DataFrame:
         """
         Simulate equity paths from historical return distribution.
@@ -89,6 +90,10 @@ class MonteCarlo:
         """
         if returns.empty:
             return pd.DataFrame()
+
+        # Deterministic seed → reproducible simulations (debugging/regression)
+        if seed is not None:
+            np.random.seed(seed)
 
         returns_arr = returns.dropna().values
         logger.info(f"Monte Carlo: {num_sims} sims, {horizon} days, method={method}, stress={stress_probability:.0%}")

@@ -157,6 +157,72 @@ class RiskControls:
 
         return False
 
+    def check_stop_intrabar(
+        self,
+        open_price: float,
+        high: float,
+        low: float,
+        current_atr: float | None = None,
+    ) -> tuple[bool, float]:
+        """
+        Intrabar-aware stop check using the full OHLC bar (conservative policy).
+
+        Ordering (prevents same-bar look-ahead):
+        1. Gap check: if the bar OPENS beyond the stop, fill at the open
+           (gap-through-stop — you cannot fill at a price that never traded).
+        2. Intrabar check: if the bar's low (long) / high (short) crosses the
+           stop, assume a fill AT the stop price.
+        3. Only if no stop triggered: update the trailing stop using this
+           bar's favorable extreme — AFTER the check, so the same bar's high
+           can never raise the stop before its own low is tested.
+
+        Returns:
+            (triggered, fill_price). fill_price is 0.0 when not triggered.
+        """
+        if not self._in_position:
+            return False, 0.0
+
+        atr = current_atr if (current_atr is not None and current_atr > 0) else self._atr_at_entry
+
+        if self._position_type == "long":
+            if open_price <= self._stop_price:
+                logger.debug(
+                    f"Risk: GAP STOP (long) — open ${open_price:.2f} <= stop ${self._stop_price:.2f}"
+                )
+                self._in_position = False
+                return True, open_price
+            if low <= self._stop_price:
+                logger.debug(
+                    f"Risk: INTRABAR STOP (long) — low ${low:.2f} <= stop ${self._stop_price:.2f}"
+                )
+                self._in_position = False
+                return True, self._stop_price
+            # No trigger — update trailing stop from this bar's high
+            if self.use_trailing_stop and high > self._peak_price:
+                self._peak_price = high
+                new_stop = high - (self.atr_multiplier * atr)
+                self._stop_price = max(self._stop_price, new_stop)
+            return False, 0.0
+
+        # short
+        if open_price >= self._stop_price:
+            logger.debug(
+                f"Risk: GAP STOP (short) — open ${open_price:.2f} >= stop ${self._stop_price:.2f}"
+            )
+            self._in_position = False
+            return True, open_price
+        if high >= self._stop_price:
+            logger.debug(
+                f"Risk: INTRABAR STOP (short) — high ${high:.2f} >= stop ${self._stop_price:.2f}"
+            )
+            self._in_position = False
+            return True, self._stop_price
+        if self.use_trailing_stop and low < self._peak_price:
+            self._peak_price = low
+            new_stop = low + (self.atr_multiplier * atr)
+            self._stop_price = min(self._stop_price, new_stop)
+        return False, 0.0
+
     def check_circuit_breaker(self, daily_pnl_pct: float) -> bool:
         """
         Check if the portfolio circuit breaker should trip.

@@ -68,6 +68,7 @@ class BacktestRequest(BaseModel):
     regime_gate: bool = False
     stress_test: bool = False
     mc_sims: int = 500
+    mc_seed: int = 42
 
 
 class CompareRequest(BaseModel):

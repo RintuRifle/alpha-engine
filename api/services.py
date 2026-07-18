@@ -249,6 +249,7 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
         sim_df = MonteCarlo.simulate_paths(
             port_returns, num_sims=int(req.get("mc_sims", 500)),
             stress_probability=stress_prob,
+            seed=req.get("mc_seed", 42),
         )
         if not sim_df.empty:
             qs = sim_df.quantile([0.05, 0.25, 0.50, 0.75, 0.95], axis=1).T
@@ -291,13 +292,26 @@ def run_backtest_job(progress, req: Dict[str, Any]) -> Dict[str, Any]:
         for t in portfolio.trade_history
     ]
 
-    warning = None
+    warnings = []
+    round_trips = int(metrics.get("total_trades") or 0)
     if len(trades) == 0:
-        warning = (
+        warnings.append(
             f"0 trades executed. {ticker} opened at "
             f"${_f(df['close'].iloc[0])} — either price exceeds available capital "
             f"or the strategy generated no signals in this window."
         )
+    elif round_trips < 10:
+        warnings.append(
+            f"Low statistical confidence: only {round_trips} completed round trips. "
+            f"Sharpe/win-rate/profit-factor are unreliable at this sample size."
+        )
+    open_pos = portfolio.positions.get(ticker, 0)
+    if open_pos:
+        warnings.append(
+            f"Position still open at end of backtest ({open_pos:g} shares) — "
+            f"marked-to-market at the last close, not liquidated."
+        )
+    warning = " • ".join(warnings) if warnings else None
 
     return {
         "ticker": ticker,

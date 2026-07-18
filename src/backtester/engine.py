@@ -175,19 +175,23 @@ class BacktestEngine:
                     self.portfolio.update_equity(date, {self.ticker: close_price})
                     continue
 
-            # ── Risk Control: Stop Loss Check ──
+            # ── Risk Control: Stop Loss Check (intrabar-aware, conservative) ──
+            # Gap-through-stop fills at the open; intrabar crosses fill at the
+            # stop price. Trailing updates happen AFTER the check (no same-bar
+            # look-ahead). See RiskControls.check_stop_intrabar().
             stop_triggered = False
             if self.use_stops and self.risk.in_position and current_position != 0:
-                stop_triggered = self.risk.check_stop(open_price, current_atr)
+                stop_triggered, stop_fill = self.risk.check_stop_intrabar(
+                    open_price, row["high"], row["low"], current_atr
+                )
                 if stop_triggered:
-                    # Force exit at open price
                     if current_position > 0:
                         self.order_manager.execute_trade(
-                            date, self.ticker, "SELL", current_position, open_price
+                            date, self.ticker, "SELL", current_position, stop_fill
                         )
                     elif current_position < 0:
                         self.order_manager.execute_trade(
-                            date, self.ticker, "BUY", abs(current_position), open_price
+                            date, self.ticker, "BUY", abs(current_position), stop_fill
                         )
                     self.risk.reset()
                     current_position = self.portfolio.positions.get(self.ticker, 0)

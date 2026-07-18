@@ -22,6 +22,29 @@ TRADING_DAYS_PER_YEAR = 252
 class Metrics:
     """Collection of performance metrics for equity curves and trade history."""
 
+    @staticmethod
+    def infer_periods_per_year(equity_df: pd.DataFrame) -> float:
+        """
+        Infer the annualization factor from the equity curve's bar spacing.
+
+        Daily bars → 252. Intraday bars → bars_per_session × 252, assuming a
+        6.5h session. Blind √252 on minute returns wildly misstates Sharpe —
+        this makes annualization timeframe-aware.
+        """
+        try:
+            idx = pd.to_datetime(equity_df.index)
+            if len(idx) < 3:
+                return float(TRADING_DAYS_PER_YEAR)
+            deltas = pd.Series(idx).diff().dropna().dt.total_seconds()
+            median_sec = float(deltas.median())
+            if median_sec <= 0 or median_sec >= 23 * 3600:
+                # Daily bars or wider (weekend gaps push the median toward 24h+)
+                return float(TRADING_DAYS_PER_YEAR)
+            bars_per_session = max(1.0, (6.5 * 3600) / median_sec)
+            return bars_per_session * TRADING_DAYS_PER_YEAR
+        except Exception:
+            return float(TRADING_DAYS_PER_YEAR)
+
     # ──────────────────────────────────────────────
     # Return Metrics
     # ──────────────────────────────────────────────
@@ -64,32 +87,38 @@ class Metrics:
         return (end_val / start_val) ** (365.0 / days) - 1
 
     @staticmethod
-    def volatility(equity_df: pd.DataFrame) -> float:
-        """Annualized portfolio volatility (standard deviation of daily returns)."""
+    def volatility(equity_df: pd.DataFrame, periods_per_year: float | None = None) -> float:
+        """Annualized portfolio volatility (std of per-bar returns, timeframe-aware)."""
         if equity_df.empty or len(equity_df) < 2:
             return 0.0
+        ann = periods_per_year or Metrics.infer_periods_per_year(equity_df)
         returns = equity_df["total_equity"].pct_change().dropna()
-        return returns.std() * np.sqrt(TRADING_DAYS_PER_YEAR)
+        return returns.std() * np.sqrt(ann)
 
     # ──────────────────────────────────────────────
     # Risk-Adjusted Return Metrics
     # ──────────────────────────────────────────────
 
     @staticmethod
-    def sharpe_ratio(equity_df: pd.DataFrame, risk_free_rate: float = 0.0) -> float:
+    def sharpe_ratio(
+        equity_df: pd.DataFrame,
+        risk_free_rate: float = 0.0,
+        periods_per_year: float | None = None,
+    ) -> float:
         """
-        Annualized Sharpe Ratio.
+        Annualized Sharpe Ratio (timeframe-aware).
 
-        Sharpe = (mean_return - risk_free) / std_return * sqrt(252)
+        Sharpe = (mean_return - rf_per_bar) / std_return * sqrt(periods_per_year)
         """
         if equity_df.empty or len(equity_df) < 2:
             return 0.0
+        ann = periods_per_year or Metrics.infer_periods_per_year(equity_df)
         returns = equity_df["total_equity"].pct_change().dropna()
         if returns.std() == 0:
             return 0.0
-        daily_rf = risk_free_rate / TRADING_DAYS_PER_YEAR
-        excess_returns = returns - daily_rf
-        return (excess_returns.mean() / excess_returns.std()) * np.sqrt(TRADING_DAYS_PER_YEAR)
+        rf_per_bar = risk_free_rate / ann
+        excess_returns = returns - rf_per_bar
+        return (excess_returns.mean() / excess_returns.std()) * np.sqrt(ann)
 
     @staticmethod
     def sortino_ratio(equity_df: pd.DataFrame, risk_free_rate: float = 0.0) -> float:
@@ -102,16 +131,17 @@ class Metrics:
         """
         if equity_df.empty or len(equity_df) < 2:
             return 0.0
+        ann = Metrics.infer_periods_per_year(equity_df)
         returns = equity_df["total_equity"].pct_change().dropna()
-        daily_rf = risk_free_rate / TRADING_DAYS_PER_YEAR
-        excess_returns = returns - daily_rf
+        rf_per_bar = risk_free_rate / ann
+        excess_returns = returns - rf_per_bar
 
         # Downside deviation: std of only negative returns
         downside = excess_returns[excess_returns < 0]
         if downside.empty or downside.std() == 0:
             return 0.0 if excess_returns.mean() <= 0 else float("inf")
 
-        return (excess_returns.mean() / downside.std()) * np.sqrt(TRADING_DAYS_PER_YEAR)
+        return (excess_returns.mean() / downside.std()) * np.sqrt(ann)
 
     @staticmethod
     def calmar_ratio(equity_df: pd.DataFrame) -> float:
